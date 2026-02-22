@@ -23,6 +23,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ./install-autostart.sh    # install & start immediately
 ./uninstall-autostart.sh  # remove
 ```
+The LaunchAgent calls uvicorn directly (without `--reload`) on port 8002.
 Logs are written to `logs/stdout.log`, `logs/stderr.log`, and `logs/knx_bus.log`.
 
 There are no test or lint commands configured.
@@ -44,6 +45,7 @@ state = {
     "connected": False,         # current gateway connection status
     "gateway_ip": "",
     "gateway_port": 3671,
+    "language": "de-DE",        # language for .knxproj parsing (de-DE or en-US)
     "project_data": None,       # last parsed project (for name lookups)
     "ga_dpt_map": {},           # {ga_address: dpt_dict} from project — registered with xknx
     "current_values": {},       # {ga_address: {"value": str, "ts": str}}
@@ -57,8 +59,8 @@ state = {
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/` | Serves `index.html` |
-| `GET` | `/api/gateway` | Returns `{ip, port, connected}` |
-| `POST` | `/api/gateway` | Saves `{ip, port}` to `config.json`, restarts KNX connection |
+| `GET` | `/api/gateway` | Returns `{ip, port, connected, language}` |
+| `POST` | `/api/gateway` | Saves `{ip, port, language}` to `config.json`, restarts KNX connection |
 | `POST` | `/api/parse` | Parses uploaded `.knxproj` file; registers DPT map with xknx |
 | `GET` | `/api/current-values` | Returns `current_values` dict |
 | `GET` | `/api/log?lines=N` | Returns last N entries from `logs/knx_bus.log` as JSON |
@@ -97,7 +99,7 @@ xknx then sets `telegram.decoded_data` on each incoming telegram. `_process_tele
 Rotates daily, keeps 30 days. Pre-loaded into `telegram_buffer` on startup (last 500 lines).
 
 #### Persistent files
-- `config.json` — `{"gateway_ip": "...", "gateway_port": 3671}`
+- `config.json` — `{"gateway_ip": "...", "gateway_port": 3671, "language": "de-DE"}`
 - `annotations.json` — `{"devices": {"1.1.5": {"name": "...", "description": "..."}}, "group_addresses": {"1/2/3": {...}}}`
 
 ---
@@ -115,6 +117,7 @@ Vanilla HTML with Alpine.js v3 (state management) and Tailwind CSS (styling), al
 ```javascript
 ws, wsStatus,                        // WebSocket instance and status ('connected'/'disconnected')
 gatewayIP, gatewayPort,              // current gateway config
+gatewayLanguage,                     // 'de-DE' (default) or 'en-US' — persisted in config.json
 showGatewayConfig,                   // modal visibility
 currentValues,                       // {ga_address: {value, ts}} — updated live
 liveLog,                             // array of telegram entries, newest first (max 1000)
@@ -126,7 +129,7 @@ editingKey, editValue,               // inline edit state ('type|key|field' form
 #### WebSocket message types
 | Type | Direction | Payload |
 |------|-----------|---------|
-| `status` | server→client | `{connected, ip, port}` — sent on connect and on connection change |
+| `status` | server→client | `{connected, ip, port, language}` — sent on connect and on connection change |
 | `snapshot` | server→client | `{values: current_values}` — sent on WebSocket connect |
 | `history` | server→client | `{entries: [...]}` — last 500 telegrams, newest first, sent on connect |
 | `telegram` | server→client | `{ts, src, device, ga, ga_name, value}` — live stream |
@@ -141,7 +144,7 @@ Alpine.js uses array spread (`[msg, ...liveLog].slice(0, 1000)`) for live update
 - **Gruppenadressen**: searchable; "Letzter Wert" column shows live value from `currentValues`; linked KO badges navigate to KO tab
 - **Topologie**: collapsible area → line → device tree
 - **Kommunikationsobjekte**: COs grouped by device, collapsible; search auto-expands sections; row click navigates to GA tab
-- **Funktionen**: function groups with linked GAs
+- **Funktionen**: function groups with linked GAs — **tab only shown when project contains at least one function** (hidden via `visibleTabs` computed getter)
 - **DPT/Flags tooltips**: hover on DPT or Flags cell for human-readable description
 
 **Without project file (bus-only mode):**
@@ -170,7 +173,9 @@ Alpine.js uses array spread (`[msg, ...liveLog].slice(0, 1000)`) for live update
 - Devices tab KO row → `navigateToCO` via `$el.dataset.coKey` (data-attribute pattern to avoid Alpine.js nested x-for scope issues)
 
 #### Gateway config modal
-- ⚙ button in header opens modal; saves IP/port via `POST /api/gateway`; closes with ESC or Cancel
+- ⚙ button in header opens modal; fields: IP address, port, language (select: de-DE / en-US)
+- Saves all three via `POST /api/gateway`; language is used automatically on next `.knxproj` parse
+- Closes with ESC or Cancel; language field on the upload form was removed in favour of this persistent setting
 
 ---
 

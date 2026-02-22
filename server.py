@@ -22,6 +22,7 @@ INDEX_HTML = Path(__file__).parent / "index.html"
 CONFIG_PATH = Path(__file__).parent / "config.json"
 ANNOTATIONS_PATH = Path(__file__).parent / "annotations.json"
 LOG_PATH = Path(__file__).parent / "logs" / "knx_bus.log"
+LAST_PROJECT_PATH = Path(__file__).parent / "last_project.json"
 
 state: dict = {
     "xknx": None,
@@ -209,9 +210,26 @@ async def start_connect_task():
     state["connect_task"] = asyncio.create_task(knx_connect_loop())
 
 
+def load_last_project():
+    """Load last parsed project from disk into state on startup."""
+    if not LAST_PROJECT_PATH.exists():
+        return
+    try:
+        data = json.loads(LAST_PROJECT_PATH.read_text())
+        state["project_data"] = data
+        state["ga_dpt_map"] = {
+            gad["address"]: gad.get("dpt")
+            for gad in data.get("group_addresses", {}).values()
+            if gad.get("address")
+        }
+    except Exception as e:
+        logging.getLogger("knx_bus").error("Error loading last project: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_log_into_buffer()
+    load_last_project()
     await start_connect_task()
     yield
     if state["connect_task"] and not state["connect_task"].done():
@@ -263,6 +281,21 @@ async def set_gateway(data: dict):
 @app.get("/api/current-values")
 def get_current_values():
     return state["current_values"]
+
+
+@app.get("/api/last-project/info")
+def get_last_project_info():
+    filename = load_config().get("last_project_filename", "")
+    if not filename or not LAST_PROJECT_PATH.exists():
+        raise HTTPException(status_code=404, detail="No last project")
+    return {"filename": filename}
+
+
+@app.get("/api/last-project/data")
+def get_last_project_data():
+    if not state["project_data"]:
+        raise HTTPException(status_code=404, detail="No project data")
+    return JSONResponse(content=state["project_data"])
 
 
 @app.get("/api/annotations")
@@ -352,6 +385,12 @@ async def parse_project(
         # Register DPT map with the live xknx instance so future telegrams are decoded
         if state["xknx"]:
             state["xknx"].group_address_dpt.set(state["ga_dpt_map"])
+
+        # Persist parsed project and filename for next startup
+        LAST_PROJECT_PATH.write_text(json.dumps(project))
+        cfg = load_config()
+        cfg["last_project_filename"] = file.filename or "project.knxproj"
+        save_config(cfg)
 
         return JSONResponse(content=project)
     except InvalidPasswordException as exc:

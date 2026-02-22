@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KNX Project Viewer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    .tab-active { @apply border-b-2 border-blue-600 text-blue-600; }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen" x-data="app()" x-cloak>
+
+<!-- ===== UPLOAD PHASE ===== -->
+<div x-show="phase === 'upload'" class="flex items-center justify-center min-h-screen">
+  <div class="bg-white rounded-2xl shadow-lg p-10 w-full max-w-lg">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6 text-center">KNX Project Viewer</h1>
+
+    <!-- Drop zone -->
+    <div
+      class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors"
+      @dragover.prevent
+      @drop.prevent="onDrop($event)"
+      @click="$refs.fileInput.click()"
+    >
+      <svg class="mx-auto mb-3 w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+          d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+      </svg>
+      <p class="text-gray-500" x-text="selectedFile ? selectedFile.name : 'KNXproj-Datei hier ablegen oder klicken'"></p>
+      <input type="file" accept=".knxproj" class="hidden" x-ref="fileInput" @change="onFileChange($event)" />
+    </div>
+
+    <!-- Options -->
+    <div class="mt-5 space-y-3">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Passwort (optional)</label>
+        <input type="password" x-model="password" placeholder="Leer lassen wenn nicht geschützt"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Sprache (optional)</label>
+        <input type="text" x-model="language" placeholder="z.B. de-DE"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+      </div>
+    </div>
+
+    <!-- Error -->
+    <div x-show="error" class="mt-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700" x-text="error"></div>
+
+    <!-- Submit -->
+    <button
+      @click="parseProject()"
+      :disabled="!selectedFile || loading"
+      class="mt-6 w-full bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+    >
+      <svg x-show="loading" class="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+      </svg>
+      <span x-text="loading ? 'Wird geparst…' : 'Parsen'"></span>
+    </button>
+  </div>
+</div>
+
+<!-- ===== RESULT PHASE ===== -->
+<div x-show="phase === 'result'" class="flex flex-col min-h-screen">
+
+  <!-- Header -->
+  <header class="bg-white shadow-sm sticky top-0 z-10">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+      <h1 class="text-lg font-bold text-gray-800" x-text="projectName"></h1>
+      <button @click="reset()" class="text-sm text-blue-600 hover:underline">Neue Datei laden</button>
+    </div>
+
+    <!-- Tabs -->
+    <div class="max-w-7xl mx-auto px-4 flex gap-1 overflow-x-auto">
+      <template x-for="tab in tabs" :key="tab.id">
+        <button
+          @click="activeTab = tab.id"
+          :class="activeTab === tab.id ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-800'"
+          class="px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors"
+          x-text="tab.label"
+        ></button>
+      </template>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 py-6 flex-1 w-full">
+
+    <!-- INFO TAB -->
+    <div x-show="activeTab === 'info'">
+      <h2 class="text-lg font-semibold mb-4 text-gray-700">Projektinformationen</h2>
+      <div class="bg-white rounded-xl shadow overflow-hidden">
+        <table class="w-full text-sm">
+          <tbody>
+            <template x-for="[key, val] in infoRows" :key="key">
+              <tr class="border-t first:border-t-0 hover:bg-gray-50">
+                <td class="px-4 py-3 font-medium text-gray-600 w-1/3" x-text="key"></td>
+                <td class="px-4 py-3 text-gray-800" x-text="val ?? '—'"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- DEVICES TAB -->
+    <div x-show="activeTab === 'devices'">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-gray-700">Geräte (<span x-text="filteredDevices.length"></span>)</h2>
+        <input x-model="deviceSearch" type="search" placeholder="Suchen…"
+          class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+      </div>
+      <div class="bg-white rounded-xl shadow overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50 text-gray-500 uppercase text-xs">
+            <tr>
+              <th class="px-4 py-3 text-left">Adresse</th>
+              <th class="px-4 py-3 text-left">Name</th>
+              <th class="px-4 py-3 text-left">Hersteller</th>
+              <th class="px-4 py-3 text-left">Bestellnr.</th>
+              <th class="px-4 py-3 text-left">Applikation</th>
+              <th class="px-4 py-3 text-left">KOs</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="dev in filteredDevices" :key="dev.individual_address">
+              <tr class="border-t hover:bg-gray-50">
+                <td class="px-4 py-3 font-mono text-xs" x-text="dev.individual_address"></td>
+                <td class="px-4 py-3 font-medium" x-text="dev.name"></td>
+                <td class="px-4 py-3 text-gray-600" x-text="dev.manufacturer_name"></td>
+                <td class="px-4 py-3 text-gray-600" x-text="dev.order_number ?? '—'"></td>
+                <td class="px-4 py-3 text-gray-600 text-xs" x-text="dev.application ?? '—'"></td>
+                <td class="px-4 py-3">
+                  <div class="flex items-center gap-2">
+                    <button @click.stop="toggleDevice(dev.individual_address)"
+                      class="text-gray-400 hover:text-gray-700 text-xs w-4 text-center"
+                      x-text="expandedDevices.has(dev.individual_address) ? '▾' : '▸'">
+                    </button>
+                    <button @click.stop="navigateToDeviceCOs(dev.individual_address)"
+                      class="text-blue-600 text-xs hover:underline"
+                      x-text="(dev.communication_object_ids?.length ?? 0) + ' KOs'">
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              <!-- Expanded KOs -->
+              <tr x-show="expandedDevices.has(dev.individual_address)" class="bg-blue-50">
+                <td colspan="6" class="px-6 py-3">
+                  <div x-show="deviceCOs(dev.individual_address).length === 0" class="text-gray-400 text-xs">Keine Kommunikationsobjekte</div>
+                  <table class="w-full text-xs" x-show="deviceCOs(dev.individual_address).length > 0">
+                    <thead class="text-gray-500">
+                      <tr>
+                        <th class="text-left pr-4 pb-1">Nr.</th>
+                        <th class="text-left pr-4 pb-1">Name</th>
+                        <th class="text-left pr-4 pb-1">DPT</th>
+                        <th class="text-left pr-4 pb-1">Flags</th>
+                        <th class="text-left pb-1">Gruppenadressen</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <template x-for="co in deviceCOs(dev.individual_address)" :key="co._key">
+                        <tr :data-co-key="co._key"
+                          @click.stop="navigateToCO($el.dataset.coKey)"
+                          title="Zu Kommunikationsobjekt springen"
+                          class="border-t border-blue-100 hover:bg-blue-100 cursor-pointer">
+                          <td class="pr-4 py-1 font-mono" x-text="co.number"></td>
+                          <td class="pr-4 py-1" x-text="co.name"></td>
+                          <td class="pr-4 py-1 font-mono" :title="dptTitle(co.dpts?.[0])" x-text="co.dpts?.[0] ? (co.dpts[0].main + (co.dpts[0].sub != null ? '.' + String(co.dpts[0].sub).padStart(3,'0') : '')) : '—'"></td>
+                          <td class="pr-4 py-1 font-mono" :title="flagTitle(co)" x-text="flagString(co)"></td>
+                          <td class="py-1 text-blue-600 underline decoration-dotted" x-text="(co.group_address_links ?? []).join(', ') || '—'"></td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- GROUP ADDRESSES TAB -->
+    <div x-show="activeTab === 'group_addresses'">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-gray-700">Gruppenadressen (<span x-text="filteredGAs.length"></span>)</h2>
+        <input x-model="gaSearch" type="search" placeholder="Suchen…"
+          class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+      </div>
+      <div class="bg-white rounded-xl shadow overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50 text-gray-500 uppercase text-xs">
+            <tr>
+              <th class="px-4 py-3 text-left">Adresse</th>
+              <th class="px-4 py-3 text-left">Name</th>
+              <th class="px-4 py-3 text-left">DPT</th>
+              <th class="px-4 py-3 text-left">Beschreibung</th>
+              <th class="px-4 py-3 text-left">Verknüpfte KOs</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="ga in filteredGAs" :key="ga.address">
+              <tr class="border-t hover:bg-gray-50">
+                <td class="px-4 py-3 font-mono text-xs" x-text="ga.address"></td>
+                <td class="px-4 py-3 font-medium" x-text="ga.name"></td>
+                <td class="px-4 py-3 font-mono text-xs" :title="dptTitle(ga.dpt)" x-text="ga.dpt ? (ga.dpt.main + (ga.dpt.sub != null ? '.' + String(ga.dpt.sub).padStart(3,'0') : '')) : '—'"></td>
+                <td class="px-4 py-3 text-gray-600 text-xs" x-text="ga.description || '—'"></td>
+                <td class="px-4 py-3">
+                  <div class="flex flex-wrap gap-1">
+                    <template x-for="coId in (ga.communication_object_ids ?? [])" :key="coId">
+                      <button @click.stop="navigateToCO(coId)"
+                        class="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded hover:bg-blue-200 font-mono whitespace-nowrap"
+                        x-text="(project?.communication_objects?.[coId]?.device_address ?? '') + ' #' + (project?.communication_objects?.[coId]?.number ?? '')">
+                      </button>
+                    </template>
+                    <span x-show="(ga.communication_object_ids ?? []).length === 0" class="text-xs text-gray-400">—</span>
+                  </div>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TOPOLOGY TAB -->
+    <div x-show="activeTab === 'topology'">
+      <h2 class="text-lg font-semibold mb-4 text-gray-700">Topologie</h2>
+      <div class="space-y-2">
+        <template x-for="[areaId, area] in Object.entries(project?.topology ?? {})" :key="areaId">
+          <div class="bg-white rounded-xl shadow overflow-hidden">
+            <!-- Area header -->
+            <button @click="toggleTopology('area_' + areaId)"
+              class="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 font-semibold text-gray-700">
+              <span class="text-gray-400" x-text="expandedTopology.has('area_' + areaId) ? '▾' : '▸'"></span>
+              <span class="font-mono text-xs text-gray-400 w-8" x-text="areaId"></span>
+              <span x-text="area.name"></span>
+              <span class="ml-auto text-xs text-gray-400 font-normal" x-text="Object.keys(area.lines ?? {}).length + ' Linien'"></span>
+            </button>
+            <!-- Lines -->
+            <div x-show="expandedTopology.has('area_' + areaId)" class="border-t">
+              <template x-for="[lineId, line] in Object.entries(area.lines ?? {})" :key="lineId">
+                <div>
+                  <button @click="toggleTopology('line_' + areaId + '_' + lineId)"
+                    class="w-full flex items-center gap-3 px-8 py-2.5 text-left hover:bg-gray-50 text-gray-600">
+                    <span class="text-gray-400" x-text="expandedTopology.has('line_' + areaId + '_' + lineId) ? '▾' : '▸'"></span>
+                    <span class="font-mono text-xs text-gray-400 w-12" x-text="areaId + '.' + lineId"></span>
+                    <span x-text="line.name"></span>
+                    <span class="ml-auto text-xs text-gray-400" x-text="(line.devices ?? []).length + ' Geräte'"></span>
+                  </button>
+                  <!-- Devices in line -->
+                  <div x-show="expandedTopology.has('line_' + areaId + '_' + lineId)" class="border-t bg-gray-50">
+                    <template x-for="devAddr in (line.devices ?? [])" :key="devAddr">
+                      <div class="flex items-center gap-3 px-12 py-2 text-sm border-b last:border-b-0 hover:bg-white">
+                        <span class="font-mono text-xs text-gray-400 w-16" x-text="devAddr"></span>
+                        <span class="text-gray-700" x-text="project?.devices?.[devAddr]?.name ?? devAddr"></span>
+                        <span class="ml-auto text-xs text-gray-400" x-text="project?.devices?.[devAddr]?.manufacturer_name ?? ''"></span>
+                      </div>
+                    </template>
+                    <div x-show="(line.devices ?? []).length === 0" class="px-12 py-2 text-sm text-gray-400">Keine Geräte</div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+        <div x-show="Object.keys(project?.topology ?? {}).length === 0" class="text-gray-400 text-sm">Keine Topologiedaten</div>
+      </div>
+    </div>
+
+    <!-- LOCATIONS TAB -->
+    <div x-show="activeTab === 'locations'">
+      <h2 class="text-lg font-semibold mb-4 text-gray-700">Standorte</h2>
+      <div x-show="!project?.locations || Object.keys(project.locations).length === 0" class="text-gray-400 text-sm">Keine Standortdaten</div>
+      <div class="space-y-2" x-show="project?.locations && Object.keys(project.locations).length > 0">
+        <template x-for="[spaceId, space] in Object.entries(project?.locations ?? {})" :key="spaceId">
+          <div x-data="{ open: false }" class="bg-white rounded-xl shadow overflow-hidden">
+            <button @click="open = !open"
+              class="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 font-semibold text-gray-700">
+              <span class="text-gray-400" x-text="open ? '▾' : '▸'"></span>
+              <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-normal" x-text="space.type ?? ''"></span>
+              <span x-text="space.name"></span>
+            </button>
+            <div x-show="open" class="border-t">
+              <div x-html="renderSpace(space, 1)"></div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- COMMUNICATION OBJECTS TAB -->
+    <div x-show="activeTab === 'com_objects'">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-gray-700">Kommunikationsobjekte (<span x-text="filteredCOs.length"></span>)</h2>
+        <input x-model="coSearch" type="search" placeholder="Suchen…"
+          class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+      </div>
+      <div class="bg-white rounded-xl shadow overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50 text-gray-500 uppercase text-xs">
+            <tr>
+              <th class="px-4 py-3 text-left">KO-Nr.</th>
+              <th class="px-4 py-3 text-left">Name</th>
+              <th class="px-4 py-3 text-left">DPT</th>
+              <th class="px-4 py-3 text-left">Flags</th>
+              <th class="px-4 py-3 text-left">Gruppenadressen</th>
+            </tr>
+          </thead>
+          <template x-for="group in cosByDevice" :key="group.addr">
+            <tbody>
+              <tr @click="toggleCODevice(group.addr)"
+                class="bg-blue-50 border-t cursor-pointer hover:bg-blue-100 select-none">
+                <td colspan="5" class="px-4 py-2.5 flex items-center gap-2">
+                  <span class="text-gray-400 text-xs" x-text="(coSearch || expandedCODevices.has(group.addr)) ? '▾' : '▸'"></span>
+                  <span class="font-mono text-xs text-gray-500" x-text="group.addr"></span>
+                  <span class="font-semibold text-gray-700 text-sm" x-text="group.deviceName"></span>
+                  <span class="ml-auto text-xs text-gray-400" x-text="group.cos.length + ' KOs'"></span>
+                </td>
+              </tr>
+              <template x-for="co in group.cos" :key="co._key">
+                <tr x-show="coSearch || expandedCODevices.has(group.addr)"
+                  @click="navigateToGA(co)"
+                  :title="'Zu Gruppenadresse springen: ' + (co.group_address_links ?? []).join(', ')"
+                  :class="co._key === highlightedCO ? 'border-t bg-yellow-100 ring-1 ring-yellow-400' : 'border-t hover:bg-blue-50 cursor-pointer'">
+                  <td class="px-4 py-3 font-mono text-xs" x-text="co.number"></td>
+                  <td class="px-4 py-3" x-text="co.name"></td>
+                  <td class="px-4 py-3 font-mono text-xs" :title="dptTitle(co.dpts?.[0])" x-text="co.dpts?.[0] ? (co.dpts[0].main + (co.dpts[0].sub != null ? '.' + String(co.dpts[0].sub).padStart(3,'0') : '')) : '—'"></td>
+                  <td class="px-4 py-3 font-mono text-xs" :title="flagTitle(co)" x-text="flagString(co)"></td>
+                  <td class="px-4 py-3 text-xs text-blue-600 underline decoration-dotted" x-text="(co.group_address_links ?? []).join(', ') || '—'"></td>
+                </tr>
+              </template>
+            </tbody>
+          </template>
+        </table>
+      </div>
+    </div>
+
+    <!-- FUNCTIONS TAB -->
+    <div x-show="activeTab === 'functions'">
+      <h2 class="text-lg font-semibold mb-4 text-gray-700">Funktionen</h2>
+      <div x-show="!project?.functions || Object.keys(project.functions).length === 0" class="text-gray-400 text-sm">Keine Funktionen vorhanden</div>
+      <div class="space-y-3" x-show="project?.functions && Object.keys(project.functions).length > 0">
+        <template x-for="[fnId, fn] in Object.entries(project?.functions ?? {})" :key="fnId">
+          <div class="bg-white rounded-xl shadow p-4">
+            <div class="font-semibold text-gray-700 mb-2" x-text="fn.name"></div>
+            <div class="text-xs text-gray-400 mb-2" x-text="'Typ: ' + (fn.function_type ?? '—')"></div>
+            <div x-show="fn.group_addresses && Object.keys(fn.group_addresses).length > 0" class="flex flex-wrap gap-1">
+              <template x-for="gaRef in Object.values(fn.group_addresses ?? {})" :key="gaRef.address">
+                <span class="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded font-mono" x-text="gaRef.address + (gaRef.name ? ' ' + gaRef.name : '')"></span>
+              </template>
+            </div>
+            <div x-show="!fn.group_addresses || Object.keys(fn.group_addresses).length === 0" class="text-xs text-gray-400">Keine Gruppenadressen</div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+function app() {
+  return {
+    phase: 'upload',
+    loading: false,
+    error: '',
+    selectedFile: null,
+    password: '',
+    language: '',
+    project: null,
+    activeTab: 'info',
+    tabs: [
+      { id: 'info', label: 'Info' },
+      { id: 'devices', label: 'Geräte' },
+      { id: 'group_addresses', label: 'Gruppenadressen' },
+      { id: 'topology', label: 'Topologie' },
+      { id: 'locations', label: 'Standorte' },
+      { id: 'com_objects', label: 'Kommunikationsobjekte' },
+      { id: 'functions', label: 'Funktionen' },
+    ],
+    deviceSearch: '',
+    gaSearch: '',
+    coSearch: '',
+    expandedDevices: new Set(),
+    expandedTopology: new Set(),
+    expandedCODevices: new Set(),
+    highlightedCO: null,
+
+    onFileChange(event) {
+      const file = event.target.files[0];
+      if (file) this.selectedFile = file;
+    },
+
+    onDrop(event) {
+      const file = event.dataTransfer.files[0];
+      if (file) this.selectedFile = file;
+    },
+
+    async parseProject() {
+      if (!this.selectedFile) return;
+      this.loading = true;
+      this.error = '';
+      const form = new FormData();
+      form.append('file', this.selectedFile);
+      form.append('password', this.password);
+      form.append('language', this.language);
+      try {
+        const res = await fetch('/api/parse', { method: 'POST', body: form });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: res.statusText }));
+          this.error = err.detail ?? 'Unbekannter Fehler';
+          return;
+        }
+        this.project = await res.json();
+        this.phase = 'result';
+      } catch (e) {
+        this.error = 'Netzwerkfehler: ' + e.message;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    reset() {
+      this.phase = 'upload';
+      this.project = null;
+      this.selectedFile = null;
+      this.error = '';
+      this.expandedDevices = new Set();
+      this.expandedTopology = new Set();
+      this.expandedCODevices = new Set();
+      this.highlightedCO = null;
+      this.deviceSearch = '';
+      this.gaSearch = '';
+      this.coSearch = '';
+    },
+
+    get projectName() {
+      return this.project?.info?.name ?? this.selectedFile?.name ?? 'KNX Projekt';
+    },
+
+    get infoRows() {
+      if (!this.project?.info) return [];
+      const info = this.project.info;
+      return [
+        ['Projektname', info.name],
+        ['ETS-Version', info.tool_version],
+        ['Gruppenadress-Stil', info.group_address_style],
+        ['Zuletzt geändert', info.last_modified],
+        ['Erstellt mit', info.created_by],
+        ['Sprache', info.language_code],
+        ['xknxproject Version', info.xknxproject_version],
+      ].filter(([, v]) => v !== undefined && v !== null && v !== '');
+    },
+
+    get allDevices() {
+      return Object.values(this.project?.devices ?? {});
+    },
+
+    get filteredDevices() {
+      const q = this.deviceSearch.toLowerCase();
+      if (!q) return this.allDevices;
+      return this.allDevices.filter(d =>
+        (d.name ?? '').toLowerCase().includes(q) ||
+        (d.individual_address ?? '').toLowerCase().includes(q) ||
+        (d.manufacturer_name ?? '').toLowerCase().includes(q) ||
+        (d.order_number ?? '').toLowerCase().includes(q) ||
+        (d.application ?? '').toLowerCase().includes(q)
+      );
+    },
+
+    get allGAs() {
+      return Object.values(this.project?.group_addresses ?? {});
+    },
+
+    get filteredGAs() {
+      const q = this.gaSearch.toLowerCase();
+      if (!q) return this.allGAs;
+      return this.allGAs.filter(ga =>
+        (ga.name ?? '').toLowerCase().includes(q) ||
+        (ga.address ?? '').toLowerCase().includes(q) ||
+        (ga.description ?? '').toLowerCase().includes(q)
+      );
+    },
+
+    get allCOs() {
+      return Object.entries(this.project?.communication_objects ?? {}).map(([key, co]) => ({
+        ...co,
+        _key: key,
+        _device: co.device_address,
+      }));
+    },
+
+    get filteredCOs() {
+      const q = this.coSearch.toLowerCase();
+      if (!q) return this.allCOs;
+      return this.allCOs.filter(co =>
+        (co.name ?? '').toLowerCase().includes(q) ||
+        (co._device ?? '').toLowerCase().includes(q) ||
+        String(co.number ?? '').includes(q) ||
+        (co.group_address_links ?? []).some(ga => ga.toLowerCase().includes(q))
+      );
+    },
+
+    toggleDevice(addr) {
+      if (this.expandedDevices.has(addr)) {
+        this.expandedDevices.delete(addr);
+      } else {
+        this.expandedDevices.add(addr);
+      }
+      this.expandedDevices = new Set(this.expandedDevices);
+    },
+
+    toggleTopology(key) {
+      if (this.expandedTopology.has(key)) {
+        this.expandedTopology.delete(key);
+      } else {
+        this.expandedTopology.add(key);
+      }
+      this.expandedTopology = new Set(this.expandedTopology);
+    },
+
+    navigateToDeviceCOs(addr) {
+      this.coSearch = '';
+      this.highlightedCO = null;
+      this.expandedCODevices = new Set([...this.expandedCODevices, addr]);
+      this.activeTab = 'com_objects';
+    },
+
+    navigateToCO(coId) {
+      const co = this.project?.communication_objects?.[coId];
+      if (!co) return;
+      this.coSearch = '';
+      this.highlightedCO = coId;
+      this.expandedCODevices = new Set([...this.expandedCODevices, co.device_address]);
+      this.activeTab = 'com_objects';
+    },
+
+    navigateToGA(co) {
+      const links = co.group_address_links ?? [];
+      if (links.length === 0) return;
+      this.gaSearch = links[0];
+      this.activeTab = 'group_addresses';
+    },
+
+    toggleCODevice(addr) {
+      if (this.expandedCODevices.has(addr)) {
+        this.expandedCODevices.delete(addr);
+      } else {
+        this.expandedCODevices.add(addr);
+      }
+      this.expandedCODevices = new Set(this.expandedCODevices);
+    },
+
+    dptTitle(dpt) {
+      if (!dpt) return '';
+      const names = {
+        '1':'1-Bit Boolean','1.001':'Schalten (Aus/Ein)','1.002':'Boolean','1.003':'Freigabe',
+        '1.004':'Rampe','1.005':'Alarm','1.006':'Binärwert','1.007':'Schritt',
+        '1.008':'Auf/Ab','1.009':'Öffnen/Schließen','1.010':'Fehler','1.011':'Zustand',
+        '2':'2-Bit Zwangssteuerung','2.001':'Schalten (zwangsgesteuert)','2.002':'Boolean (zwangsgesteuert)',
+        '3':'4-Bit Dimmen/Jalousie','3.007':'Lichtstärke dimmen','3.008':'Jalousie fahren',
+        '4':'8-Bit Zeichen','4.001':'ASCII','4.002':'ISO 8859-1',
+        '5':'8-Bit Unsigned','5.001':'Prozentwert (0–100 %)','5.003':'Winkel (0–360°)',
+        '5.004':'Prozentwert (0–255)','5.005':'Dezimalwert (0–255)','5.010':'Pulszähler',
+        '6':'8-Bit Signed','6.001':'Prozentwert (−128–127 %)','6.010':'Pulszähler',
+        '7':'2-Byte Unsigned','7.001':'Pulszähler','7.002':'Zeitraum (ms)',
+        '7.003':'Zeitraum (10 ms)','7.004':'Zeitraum (100 ms)','7.005':'Zeitraum (s)',
+        '7.006':'Zeitraum (min)','7.007':'Zeitraum (h)','7.011':'Länge (mm)','7.012':'Strom (mA)',
+        '8':'2-Byte Signed','8.001':'Pulsdifferenz','8.002':'Zeitraum (10 ms)',
+        '9':'2-Byte Float','9.001':'Temperatur (°C)','9.002':'Temperaturdifferenz (K)',
+        '9.003':'Kelvin/Stunde','9.004':'Beleuchtungsstärke (Lux)','9.005':'Windgeschwindigkeit (m/s)',
+        '9.006':'Druck (Pa)','9.007':'Luftfeuchtigkeit (%)','9.008':'Luftqualität (ppm)',
+        '9.009':'Zeitraum (s)','9.010':'Zeitraum (ms)','9.011':'Spannung (mV)',
+        '9.020':'Spannung (mV)','9.021':'Strom (mA)','9.022':'Leistungsdichte (W/m²)',
+        '9.024':'Leistung (kW)','9.025':'Volumenfluss (l/h)','9.026':'Liter',
+        '10':'Uhrzeit (3 Byte)','10.001':'Uhrzeit mit Wochentag',
+        '11':'Datum (3 Byte)','11.001':'Datum',
+        '12':'4-Byte Unsigned','12.001':'Pulszähler',
+        '13':'4-Byte Signed','13.001':'Pulszähler','13.010':'Pulsdifferenz',
+        '13.013':'Durchfluss (l/h)',
+        '14':'4-Byte Float','14.007':'Winkel (°)','14.019':'Spannung (V)',
+        '14.027':'Stromstärke (A)','14.031':'Frequenz (Hz)','14.033':'Wärme (J)',
+        '14.056':'Wirkleistung (W)','14.057':'Scheinleistung (VA)',
+        '14.068':'Temperatur (°C)','14.076':'Volumen (m³)',
+        '16':'Zeichenkette (14 Byte ASCII)','16.001':'Zeichenkette (ISO 8859-1)',
+        '17':'Szenen-Nummer (1–64)','18':'Szenen-Aktivierung/Speicherung',
+        '19':'Datum und Uhrzeit (8 Byte)',
+        '20':'1-Byte Aufzählung','20.001':'Systemuhr-Modus','20.002':'Bausystem-Modus',
+        '20.102':'HVAC Betriebsart','20.103':'HVAC Steuerung','20.105':'HVAC Zusatz-Betriebsart',
+        '21':'8-Bit Statusfeld','22':'16-Bit Statusfeld',
+        '29':'8-Byte Signed','29.001':'Impulszähler','29.002':'Pulsdifferenz','29.010':'Wirkenergie (Wh)',
+        '232':'RGB-Farbe (3 Byte)','232.600':'RGB (Rot/Grün/Blau)',
+        '251':'RGBW-Farbe (6 Byte)',
+      };
+      const subKey = dpt.sub != null ? `${dpt.main}.${String(dpt.sub).padStart(3,'0')}` : null;
+      return names[subKey] || names[String(dpt.main)] || (subKey ? `DPT ${subKey}` : `DPT ${dpt.main}`);
+    },
+
+    flagTitle(ko) {
+      const f = ko.flags ?? {};
+      const lines = [];
+      if (f.communication) lines.push('C – Kommunikation (Objekt nimmt am Bus teil)');
+      if (f.read)          lines.push('R – Lesen (Wert kann abgefragt werden)');
+      if (f.write)         lines.push('W – Schreiben (Wert kann gesetzt werden)');
+      if (f.transmit)      lines.push('T – Senden (Wert wird bei Änderung gesendet)');
+      if (f.update)        lines.push('U – Aktualisieren (Wert wird bei Empfang übernommen)');
+      if (f.read_on_init)  lines.push('I – Lesen bei Initialisierung');
+      return lines.join('\n') || 'Keine Flags gesetzt';
+    },
+
+    flagString(ko) {
+      const f = ko.flags ?? {};
+      const flags = [];
+      if (f.read) flags.push('R');
+      if (f.write) flags.push('W');
+      if (f.transmit) flags.push('T');
+      if (f.update) flags.push('U');
+      if (f.communication) flags.push('C');
+      return flags.join('') || '—';
+    },
+
+    deviceCOs(addr) {
+      return this.allCOs.filter(co => co._device === addr);
+    },
+
+    get cosByDevice() {
+      const grouped = {};
+      for (const co of this.filteredCOs) {
+        if (!grouped[co._device]) grouped[co._device] = [];
+        grouped[co._device].push(co);
+      }
+      return Object.entries(grouped).map(([addr, cos]) => ({
+        addr,
+        deviceName: this.project?.devices?.[addr]?.name ?? addr,
+        cos: cos.sort((a, b) => (a.number ?? 0) - (b.number ?? 0)),
+      }));
+    },
+
+    renderSpace(space, depth) {
+      if (!space) return '';
+      const indent = depth * 16;
+      const items = Object.values(space.spaces ?? {});
+      const fns = space.functions ?? [];
+      let html = '';
+
+      for (const child of items) {
+        const typeLabel = child.type ? `<span class="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded mr-2">${child.type}</span>` : '';
+        html += `<div class="border-b last:border-b-0">`;
+        html += `<div class="flex items-center gap-2 py-2 hover:bg-gray-50" style="padding-left: ${8 + indent}px">`;
+        html += `${typeLabel}<span class="text-sm text-gray-700">${child.name ?? ''}</span>`;
+        html += `</div>`;
+        if (child.spaces && Object.keys(child.spaces).length > 0) {
+          html += this.renderSpace(child, depth + 1);
+        }
+        if (child.functions && child.functions.length > 0) {
+          for (const fn of child.functions) {
+            const fnData = this.project?.functions?.[fn];
+            if (fnData) {
+              html += `<div class="py-1 text-xs text-blue-600" style="padding-left: ${8 + indent + 16}px">⚡ ${fnData.name}</div>`;
+            }
+          }
+        }
+        html += `</div>`;
+      }
+
+      for (const fnId of fns) {
+        const fnData = this.project?.functions?.[fnId];
+        if (fnData) {
+          html += `<div class="py-1 text-xs text-blue-600 border-b last:border-b-0" style="padding-left: ${8 + indent}px">⚡ ${fnData.name}</div>`;
+        }
+      }
+      return html;
+    },
+  };
+}
+</script>
+</body>
+</html>

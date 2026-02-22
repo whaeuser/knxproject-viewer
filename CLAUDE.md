@@ -105,6 +105,8 @@ xknx then sets `telegram.decoded_data` on each incoming telegram. `_process_tele
 - `decoded_data.transcoder.unit` → unit string (e.g. `"°C"`, `"%"`, `"V"`)
 - Booleans displayed as `"Ein"` / `"Aus"`, floats formatted to 2 decimal places
 - Falls back to raw `telegram.payload.value` string if no DPT known
+- `raw` field always contains the undecoced payload string; `dpt` field contains e.g. `"9.001"` (from `transcoder.dpt_main_number` / `dpt_sub_number`), empty string if unknown
+- Bus-Monitor "Wert" cell tooltip: `"DPT: 9.001 | Raw: DPTArray((0x0c, 0x1a))"` — only shown when DPT or raw differs from displayed value
 
 #### Telegram callback
 `telegram_received_cb` is synchronous (required by xknx); it spawns `_process_telegram` as an `asyncio.Task`. The async function looks up device name and GA name from `project_data`, formats the value, logs to `knx_bus.log`, updates `current_values`, appends to `telegram_buffer`, and broadcasts to all WebSocket clients.
@@ -156,7 +158,7 @@ editingKey, editValue,               // inline edit state ('type|key|field' form
 | `status` | server→client | `{connected, ip, port, language}` — sent on connect and on connection change |
 | `snapshot` | server→client | `{values: current_values}` — sent on WebSocket connect |
 | `history` | server→client | `{entries: [...]}` — last 500 telegrams, newest first, sent on connect |
-| `telegram` | server→client | `{ts, src, device, ga, ga_name, value}` — live stream |
+| `telegram` | server→client | `{ts, src, device, ga, ga_name, value, raw, dpt}` — live stream |
 
 Alpine.js uses array spread (`[msg, ...liveLog].slice(0, 1000)`) for live updates — **not** `unshift()` — to ensure Alpine's reactivity proxy detects the change.
 
@@ -182,6 +184,8 @@ Alpine.js uses array spread (`[msg, ...liveLog].slice(0, 1000)`) for live update
 
 #### Bus-Monitor tab
 - Real-time telegram table (Zeit, PA, Gerät, GA, GA-Name, Wert)
+- Gerät column: `min-w-[180px]`; GA-Name column: `min-w-[220px]` (both truncate with title tooltip)
+- Wert cell tooltip: `"DPT: x.xxx | Raw: ..."` (only when DPT known or raw ≠ decoded value)
 - Filter input searches across all fields
 - Pause/Resume button, Clear button, entry count
 - Clicking a GA address navigates to Gruppenadressen tab

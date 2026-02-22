@@ -72,7 +72,11 @@
   <header class="bg-white shadow-sm sticky top-0 z-10">
     <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
       <h1 class="text-lg font-bold text-gray-800" x-text="projectName"></h1>
-      <button @click="reset()" class="text-sm text-blue-600 hover:underline">Neue Datei laden</button>
+      <div class="flex items-center gap-4">
+        <button @click="exportMarkdown()" class="text-sm text-gray-600 hover:text-gray-900">↓ Markdown</button>
+        <button @click="exportPDF()" class="text-sm text-gray-600 hover:text-gray-900">↓ PDF</button>
+        <button @click="reset()" class="text-sm text-blue-600 hover:underline">Neue Datei laden</button>
+      </div>
     </div>
 
     <!-- Tabs -->
@@ -437,6 +441,180 @@ function app() {
       this.deviceSearch = '';
       this.gaSearch = '';
       this.coSearch = '';
+    },
+
+    _mdEsc(s) {
+      return String(s ?? '').replace(/\|/g, '\\|').replace(/[\r\n]+/g, ' ');
+    },
+
+    _dptStr(dpt) {
+      if (!dpt) return '—';
+      return dpt.sub != null ? `${dpt.main}.${String(dpt.sub).padStart(3,'0')}` : String(dpt.main);
+    },
+
+    _download(content, filename, type) {
+      const blob = new Blob([content], { type });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+
+    exportMarkdown() {
+      const e = s => this._mdEsc(s);
+      const d = dpt => this._dptStr(dpt);
+      const lines = [];
+
+      lines.push(`# ${e(this.projectName)}`, '');
+
+      lines.push('## Projektinformationen', '');
+      for (const [key, val] of this.infoRows) lines.push(`- **${e(key)}:** ${e(val)}`);
+      lines.push('');
+
+      lines.push('## Geräte', '');
+      lines.push('| Adresse | Name | Hersteller | Bestellnr. | Applikation |');
+      lines.push('|---------|------|------------|------------|-------------|');
+      for (const dev of this.allDevices)
+        lines.push(`| ${e(dev.individual_address)} | ${e(dev.name)} | ${e(dev.manufacturer_name)} | ${e(dev.order_number)} | ${e(dev.application)} |`);
+      lines.push('');
+
+      lines.push('## Gruppenadressen', '');
+      lines.push('| Adresse | Name | DPT | Beschreibung | Verknüpfte KOs |');
+      lines.push('|---------|------|-----|--------------|----------------|');
+      for (const ga of this.allGAs) {
+        const cos = (ga.communication_object_ids ?? []).map(id => {
+          const co = this.project?.communication_objects?.[id];
+          return co ? `${co.device_address} #${co.number}` : null;
+        }).filter(Boolean).join(', ');
+        lines.push(`| ${e(ga.address)} | ${e(ga.name)} | ${e(d(ga.dpt))} | ${e(ga.description)} | ${e(cos || '—')} |`);
+      }
+      lines.push('');
+
+      lines.push('## Kommunikationsobjekte', '');
+      for (const group of this.cosByDevice) {
+        lines.push(`### ${e(group.addr)} – ${e(group.deviceName)}`, '');
+        lines.push('| KO-Nr. | Name | DPT | Flags | Gruppenadressen |');
+        lines.push('|--------|------|-----|-------|-----------------|');
+        for (const co of group.cos)
+          lines.push(`| ${co.number} | ${e(co.name)} | ${e(d(co.dpts?.[0]))} | ${e(this.flagString(co))} | ${e((co.group_address_links ?? []).join(', ') || '—')} |`);
+        lines.push('');
+      }
+
+      lines.push('## Topologie', '');
+      for (const [areaId, area] of Object.entries(this.project?.topology ?? {})) {
+        lines.push(`### Bereich ${e(areaId)} – ${e(area.name)}`, '');
+        for (const [lineId, line] of Object.entries(area.lines ?? {})) {
+          lines.push(`#### Linie ${e(areaId)}.${e(lineId)} – ${e(line.name)}`, '');
+          for (const addr of (line.devices ?? [])) {
+            const dev = this.project?.devices?.[addr];
+            lines.push(`- \`${e(addr)}\` ${e(dev?.name ?? '')}`);
+          }
+          lines.push('');
+        }
+      }
+
+      const fns = Object.values(this.project?.functions ?? {});
+      if (fns.length) {
+        lines.push('## Funktionen', '');
+        lines.push('| Name | Typ | Gruppenadressen |');
+        lines.push('|------|-----|-----------------|');
+        for (const fn of fns) {
+          const gas = Object.values(fn.group_addresses ?? {}).map(r => r.address).join(', ');
+          lines.push(`| ${e(fn.name)} | ${e(fn.function_type)} | ${e(gas || '—')} |`);
+        }
+        lines.push('');
+      }
+
+      const safe = this.projectName.replace(/[^a-zA-Z0-9_\-]/g, '_');
+      this._download(lines.join('\n'), `${safe}.md`, 'text/markdown;charset=utf-8');
+    },
+
+    exportPDF() {
+      const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      const d = dpt => this._dptStr(dpt);
+
+      const css = `
+        body{font-family:Arial,sans-serif;font-size:9pt;color:#1f2937;margin:15mm}
+        h1{font-size:16pt;border-bottom:2px solid #2563eb;padding-bottom:4px;margin-bottom:12px}
+        h2{font-size:12pt;color:#1d4ed8;margin-top:20px;border-bottom:1px solid #d1d5db;page-break-after:avoid}
+        h3{font-size:10pt;color:#374151;margin:10px 0 4px}
+        table{width:100%;border-collapse:collapse;margin:6px 0;font-size:8pt}
+        th{background:#f3f4f6;text-align:left;padding:4px 6px;border:1px solid #d1d5db;font-weight:600}
+        td{padding:3px 6px;border:1px solid #d1d5db;vertical-align:top}
+        tr:nth-child(even) td{background:#f9fafb}
+        .dh td{background:#dbeafe;font-weight:600}
+        .mono{font-family:monospace}
+        dl{display:grid;grid-template-columns:max-content 1fr;gap:2px 16px;margin:6px 0}
+        dt{font-weight:600;color:#6b7280}
+        @media print{h2{page-break-before:auto}}`;
+
+      let html = `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
+        <title>${esc(this.projectName)}</title><style>${css}</style></head><body>
+        <h1>${esc(this.projectName)}</h1>`;
+
+      // Info
+      html += '<h2>Projektinformationen</h2><dl>';
+      for (const [key, val] of this.infoRows)
+        html += `<dt>${esc(key)}</dt><dd>${esc(val)}</dd>`;
+      html += '</dl>';
+
+      // Devices
+      html += '<h2>Geräte</h2><table><thead><tr><th>Adresse</th><th>Name</th><th>Hersteller</th><th>Bestellnr.</th><th>Applikation</th></tr></thead><tbody>';
+      for (const dev of this.allDevices)
+        html += `<tr><td class="mono">${esc(dev.individual_address)}</td><td>${esc(dev.name)}</td><td>${esc(dev.manufacturer_name)}</td><td>${esc(dev.order_number)}</td><td>${esc(dev.application)}</td></tr>`;
+      html += '</tbody></table>';
+
+      // Group addresses
+      html += '<h2>Gruppenadressen</h2><table><thead><tr><th>Adresse</th><th>Name</th><th>DPT</th><th>Beschreibung</th><th>Verknüpfte KOs</th></tr></thead><tbody>';
+      for (const ga of this.allGAs) {
+        const cos = (ga.communication_object_ids ?? []).map(id => {
+          const co = this.project?.communication_objects?.[id];
+          return co ? `${co.device_address} #${co.number}` : null;
+        }).filter(Boolean).join(', ');
+        html += `<tr><td class="mono">${esc(ga.address)}</td><td>${esc(ga.name)}</td><td class="mono">${esc(d(ga.dpt))}</td><td>${esc(ga.description)}</td><td class="mono">${esc(cos||'—')}</td></tr>`;
+      }
+      html += '</tbody></table>';
+
+      // Communication objects
+      html += '<h2>Kommunikationsobjekte</h2><table><thead><tr><th>KO-Nr.</th><th>Name</th><th>DPT</th><th>Flags</th><th>Gruppenadressen</th></tr></thead><tbody>';
+      for (const group of this.cosByDevice) {
+        html += `<tr class="dh"><td colspan="5">${esc(group.addr)} – ${esc(group.deviceName)}</td></tr>`;
+        for (const co of group.cos)
+          html += `<tr><td class="mono">${esc(co.number)}</td><td>${esc(co.name)}</td><td class="mono">${esc(d(co.dpts?.[0]))}</td><td class="mono">${esc(this.flagString(co))}</td><td class="mono">${esc((co.group_address_links??[]).join(', ')||'—')}</td></tr>`;
+      }
+      html += '</tbody></table>';
+
+      // Topology
+      html += '<h2>Topologie</h2><table><thead><tr><th>Bereich</th><th>Linie</th><th>Adresse</th><th>Name</th><th>Hersteller</th></tr></thead><tbody>';
+      for (const [areaId, area] of Object.entries(this.project?.topology ?? {})) {
+        for (const [lineId, line] of Object.entries(area.lines ?? {})) {
+          for (const addr of (line.devices ?? [])) {
+            const dev = this.project?.devices?.[addr];
+            html += `<tr><td>${esc(areaId)} – ${esc(area.name)}</td><td>${esc(areaId)}.${esc(lineId)} – ${esc(line.name)}</td><td class="mono">${esc(addr)}</td><td>${esc(dev?.name??'')}</td><td>${esc(dev?.manufacturer_name??'')}</td></tr>`;
+          }
+        }
+      }
+      html += '</tbody></table>';
+
+      // Functions
+      const fns = Object.values(this.project?.functions ?? {});
+      if (fns.length) {
+        html += '<h2>Funktionen</h2><table><thead><tr><th>Name</th><th>Typ</th><th>Gruppenadressen</th></tr></thead><tbody>';
+        for (const fn of fns) {
+          const gas = Object.values(fn.group_addresses ?? {}).map(r => r.address).join(', ');
+          html += `<tr><td>${esc(fn.name)}</td><td>${esc(fn.function_type)}</td><td class="mono">${esc(gas||'—')}</td></tr>`;
+        }
+        html += '</tbody></table>';
+      }
+
+      html += '</body></html>';
+      const win = window.open('', '_blank');
+      win.document.write(html);
+      win.document.close();
+      win.focus();
+      setTimeout(() => win.print(), 500);
     },
 
     get projectName() {

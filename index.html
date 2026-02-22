@@ -614,11 +614,11 @@
                 <tr class="border-t hover:bg-gray-50 transition-colors">
                   <td class="px-3 py-2 text-gray-400 whitespace-nowrap text-xs" x-text="entry.ts.split(' ')[1]"></td>
                   <td class="px-3 py-2 text-gray-600 text-xs" x-text="entry.src"></td>
-                  <td class="px-3 py-2 text-gray-600 text-xs max-w-[140px] truncate" x-text="entry.device" :title="entry.device"></td>
-                  <td class="px-3 py-2 text-blue-600 cursor-pointer hover:underline text-xs"
+                  <td class="px-3 py-2 text-gray-600 text-xs min-w-[180px] max-w-[220px] truncate" x-text="entry.device" :title="entry.device"></td>
+                  <td class="px-3 py-2 text-blue-600 cursor-pointer hover:underline text-xs whitespace-nowrap"
                       x-text="entry.ga"
                       @click="gaSearch = entry.ga; activeTab = 'group_addresses'"></td>
-                  <td class="px-3 py-2 text-gray-700 text-xs max-w-[180px] truncate" x-text="entry.ga_name" :title="entry.ga_name"></td>
+                  <td class="px-3 py-2 text-gray-700 text-xs min-w-[220px] max-w-[280px] truncate" x-text="entry.ga_name" :title="entry.ga_name"></td>
                   <td class="px-3 py-2 font-semibold text-gray-900 text-xs" x-text="entry.value"></td>
                 </tr>
               </template>

@@ -29,6 +29,7 @@ Web-UI zum Hochladen, Analysieren und Dokumentieren von `.knxproj`-Dateien – m
 - **Bus-only-Modus**: Geräte und GAs aus Bus-Telegrammen ableiten ohne Projektdatei
 - Inline-Editierung von Namen und Beschreibungen → gespeichert in `annotations.json`
 - Verbindungsindikator + Gateway-Konfiguration (IP, Port, Sprache) im Browser
+- **Letzte Projektdatei** wird nach dem Parsen gespeichert und beim nächsten Start automatisch vorgeschlagen
 
 ---
 
@@ -68,23 +69,26 @@ Startet bei jedem Login automatisch. Logs: `logs/stdout.log`, `logs/stderr.log`.
 
 ```
 knxproject-viewer/
-├── server.py                   # Privater Server (Port 8002): Bus-Monitor, WebSocket, KNX
-├── server_public.py            # Öffentlicher Server (Port 8004): nur Projektbetrachter
-├── index.html                  # Single-Page-Frontend (von beiden Servern geteilt)
-├── requirements.txt            # Python-Abhängigkeiten
-├── setup.sh                    # Erstellt .venv und installiert alles
-├── run.sh                      # Startet privaten Server
-├── run_public.sh               # Startet öffentlichen Server
-├── install-autostart.sh        # macOS LaunchAgent für privaten Server
-├── install-autostart-public.sh # macOS LaunchAgent für öffentlichen Server
+├── server.py                    # Privater Server (Port 8002): Bus-Monitor, WebSocket, KNX
+├── server_public.py             # Öffentlicher Server (Port 8004): nur Projektbetrachter
+├── index.html                   # Single-Page-Frontend (von beiden Servern geteilt)
+├── requirements.txt             # Python-Abhängigkeiten
+├── setup.sh                     # Erstellt .venv und installiert alles
+├── run.sh                       # Startet privaten Server
+├── run_public.sh                # Startet öffentlichen Server
+├── install-autostart.sh         # macOS LaunchAgent für privaten Server
+├── install-autostart-public.sh  # macOS LaunchAgent für öffentlichen Server
 ├── uninstall-autostart.sh
 ├── uninstall-autostart-public.sh
-├── config.json                 # Gateway-IP, Port, Sprache (automatisch erstellt)
-├── annotations.json            # Inline-Annotationen (automatisch erstellt)
+├── config.json                  # Gateway-IP, Port, Sprache, letzter Dateiname (automatisch)
+├── annotations.json             # Inline-Annotationen (automatisch erstellt)
+├── last_project.json            # Letztes geparste Projekt als JSON (automatisch erstellt)
 └── logs/
-    ├── knx_bus.log             # KNX-Telegrammlog (rotierend, 30 Tage)
-    ├── stdout.log              # Server-Stdout (Autostart)
-    └── stderr.log              # Server-Stderr (Autostart)
+    ├── knx_bus.log              # KNX-Telegrammlog (rotierend, 30 Tage)
+    ├── stdout.log               # Server-Stdout (Autostart privat)
+    ├── stderr.log               # Server-Stderr (Autostart privat)
+    ├── stdout-public.log        # Server-Stdout (Autostart öffentlich)
+    └── stderr-public.log        # Server-Stderr (Autostart öffentlich)
 ```
 
 ---

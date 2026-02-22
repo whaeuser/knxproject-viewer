@@ -9,11 +9,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ./setup.sh
 ```
 
-**Run** (auto-runs setup if needed, starts server on `0.0.0.0:8000`):
+**Run** (auto-runs setup if needed, starts server on `0.0.0.0:8002`):
 ```bash
 ./run.sh
 # or directly:
-.venv/bin/uvicorn server:app --host 0.0.0.0 --reload
+.venv/bin/uvicorn server:app --host 0.0.0.0 --port 8002 --reload
 ```
 
 **Autostart** (macOS LaunchAgent — starts server on every login):

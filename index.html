@@ -62,6 +62,10 @@
       </svg>
       <span x-text="loading ? 'Wird geparst…' : 'Parsen'"></span>
     </button>
+    <button @click="skipToMonitor()"
+      class="mt-3 w-full text-sm text-gray-500 hover:text-blue-600 py-2 transition-colors">
+      Ohne Projektdatei → Nur Bus-Monitor
+    </button>
   </div>
 </div>
 
@@ -76,6 +80,41 @@
         <button @click="exportMarkdown()" class="text-sm text-gray-600 hover:text-gray-900">↓ Markdown</button>
         <button @click="exportPDF()" class="text-sm text-gray-600 hover:text-gray-900">↓ PDF</button>
         <button @click="reset()" class="text-sm text-blue-600 hover:underline">Neue Datei laden</button>
+        <!-- Connection indicator -->
+        <span class="flex items-center gap-1.5 text-sm border-l pl-4">
+          <span class="w-2 h-2 rounded-full flex-shrink-0"
+                :class="wsStatus === 'connected' ? 'bg-green-500' : 'bg-red-400'"></span>
+          <span class="text-gray-600" x-text="wsStatus === 'connected' ? gatewayIP : 'Kein Gateway'"></span>
+          <button @click="showGatewayConfig = true" class="text-gray-400 hover:text-gray-700 ml-0.5" title="Gateway konfigurieren">⚙</button>
+        </span>
+      </div>
+    </div>
+
+    <!-- Gateway Config Modal -->
+    <div x-show="showGatewayConfig" x-cloak
+         class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+         @keydown.escape.window="showGatewayConfig = false">
+      <div class="bg-white rounded-xl p-6 w-80 shadow-2xl">
+        <h3 class="text-base font-semibold text-gray-800 mb-4">KNX/IP Gateway</h3>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">IP-Adresse</label>
+            <input x-model="gatewayIP" placeholder="192.168.1.100" type="text"
+                   class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Port</label>
+            <input x-model.number="gatewayPort" type="number" min="1" max="65535"
+                   class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+        </div>
+        <p x-show="gatewayError" x-text="gatewayError" class="mt-2 text-sm text-red-600"></p>
+        <div class="flex gap-2 mt-5">
+          <button @click="saveGatewayConfig()"
+                  class="flex-1 bg-blue-600 text-white text-sm font-semibold py-2 rounded-lg hover:bg-blue-700 transition-colors">Verbinden</button>
+          <button @click="showGatewayConfig = false; gatewayError = ''"
+                  class="flex-1 bg-gray-100 text-gray-700 text-sm font-semibold py-2 rounded-lg hover:bg-gray-200 transition-colors">Abbrechen</button>
+        </div>
       </div>
     </div>
 
@@ -113,6 +152,84 @@
 
     <!-- DEVICES TAB -->
     <div x-show="activeTab === 'devices'">
+
+      <!-- Bus-only mode (no project) -->
+      <div x-show="!project">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-semibold text-gray-700">Geräte aus Bus-Monitor
+            (<span x-text="filteredBusDevices.length"></span>)
+            <span class="text-xs font-normal text-gray-400 ml-2">— Klick auf Name/Beschreibung zum Bearbeiten</span>
+          </h2>
+          <input x-model="deviceSearch" type="search" placeholder="Suchen…"
+            class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        </div>
+        <div class="bg-white rounded-xl shadow overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-gray-500 uppercase text-xs">
+              <tr>
+                <th class="px-4 py-3 text-left">PA</th>
+                <th class="px-4 py-3 text-left">Name ✎</th>
+                <th class="px-4 py-3 text-left">Beschreibung ✎</th>
+                <th class="px-4 py-3 text-left">Telegramme</th>
+                <th class="px-4 py-3 text-left">Letztes Telegramm</th>
+                <th class="px-4 py-3 text-left">Gesendete GAs</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="dev in filteredBusDevices" :key="dev.individual_address">
+                <tr class="border-t hover:bg-gray-50">
+                  <td class="px-4 py-3 font-mono text-xs font-semibold" x-text="dev.individual_address"></td>
+                  <!-- Editable name -->
+                  <td class="px-3 py-2 cursor-pointer hover:bg-yellow-50 min-w-[120px]"
+                      @click="startEdit('devices', dev.individual_address, 'name', annotations.devices?.[dev.individual_address]?.name ?? '')">
+                    <template x-if="editingKey !== 'devices|' + dev.individual_address + '|name'">
+                      <span :class="dev.name ? 'font-medium text-gray-800' : 'text-gray-300 italic text-xs'"
+                            x-text="dev.name || 'Name…'"></span>
+                    </template>
+                    <template x-if="editingKey === 'devices|' + dev.individual_address + '|name'">
+                      <input x-model="editValue" @blur="saveEdit()" @keydown.enter="saveEdit()"
+                             @keydown.escape.prevent="editingKey=''" @click.stop
+                             class="w-full border border-blue-400 rounded px-2 py-0.5 text-sm outline-none"
+                             x-init="$nextTick(() => $el.focus())" />
+                    </template>
+                  </td>
+                  <!-- Editable description -->
+                  <td class="px-3 py-2 cursor-pointer hover:bg-yellow-50 min-w-[160px]"
+                      @click="startEdit('devices', dev.individual_address, 'description', annotations.devices?.[dev.individual_address]?.description ?? '')">
+                    <template x-if="editingKey !== 'devices|' + dev.individual_address + '|description'">
+                      <span :class="dev.description ? 'text-gray-600' : 'text-gray-300 italic text-xs'"
+                            x-text="dev.description || 'Beschreibung…'"></span>
+                    </template>
+                    <template x-if="editingKey === 'devices|' + dev.individual_address + '|description'">
+                      <input x-model="editValue" @blur="saveEdit()" @keydown.enter="saveEdit()"
+                             @keydown.escape.prevent="editingKey=''" @click.stop
+                             class="w-full border border-blue-400 rounded px-2 py-0.5 text-sm outline-none"
+                             x-init="$nextTick(() => $el.focus())" />
+                    </template>
+                  </td>
+                  <td class="px-4 py-3 text-gray-500 text-center" x-text="dev.count"></td>
+                  <td class="px-4 py-3 font-mono text-xs text-gray-400" x-text="dev.lastTs.split(' ')[1] ?? dev.lastTs"></td>
+                  <td class="px-4 py-3">
+                    <div class="flex flex-wrap gap-1">
+                      <template x-for="ga in dev.gas" :key="ga">
+                        <button @click="gaSearch = ga; activeTab = 'group_addresses'"
+                          class="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded font-mono hover:bg-blue-200"
+                          x-text="ga"></button>
+                      </template>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+              <tr x-show="filteredBusDevices.length === 0">
+                <td colspan="6" class="text-center text-gray-400 py-10 text-sm">Warte auf Telegramme vom Bus…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Project mode -->
+      <div x-show="project">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-lg font-semibold text-gray-700">Geräte (<span x-text="filteredDevices.length"></span>)</h2>
         <input x-model="deviceSearch" type="search" placeholder="Suchen…"
@@ -186,10 +303,87 @@
           </tbody>
         </table>
       </div>
+      </div> <!-- end project mode -->
     </div>
 
     <!-- GROUP ADDRESSES TAB -->
     <div x-show="activeTab === 'group_addresses'">
+
+      <!-- Bus-only mode (no project) -->
+      <div x-show="!project">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-semibold text-gray-700">Gruppenadressen aus Bus-Monitor
+            (<span x-text="filteredBusGAs.length"></span>)
+            <span class="text-xs font-normal text-gray-400 ml-2">— Klick auf Name/Beschreibung zum Bearbeiten</span>
+          </h2>
+          <input x-model="gaSearch" type="search" placeholder="Suchen…"
+            class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        </div>
+        <div class="bg-white rounded-xl shadow overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-gray-500 uppercase text-xs">
+              <tr>
+                <th class="px-4 py-3 text-left">Adresse</th>
+                <th class="px-4 py-3 text-left">Name ✎</th>
+                <th class="px-4 py-3 text-left">Beschreibung ✎</th>
+                <th class="px-4 py-3 text-left">Letzter Wert</th>
+                <th class="px-4 py-3 text-left">Zeitstempel</th>
+                <th class="px-4 py-3 text-left">Quell-PAs</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="ga in filteredBusGAs" :key="ga.address">
+                <tr class="border-t hover:bg-gray-50">
+                  <td class="px-4 py-3 font-mono text-xs font-semibold" x-text="ga.address"></td>
+                  <!-- Editable name -->
+                  <td class="px-3 py-2 cursor-pointer hover:bg-yellow-50 min-w-[120px]"
+                      @click="startEdit('group_addresses', ga.address, 'name', annotations.group_addresses?.[ga.address]?.name ?? '')">
+                    <template x-if="editingKey !== 'group_addresses|' + ga.address + '|name'">
+                      <span :class="ga.name ? 'font-medium text-gray-800' : 'text-gray-300 italic text-xs'"
+                            x-text="ga.name || 'Name…'"></span>
+                    </template>
+                    <template x-if="editingKey === 'group_addresses|' + ga.address + '|name'">
+                      <input x-model="editValue" @blur="saveEdit()" @keydown.enter="saveEdit()"
+                             @keydown.escape.prevent="editingKey=''" @click.stop
+                             class="w-full border border-blue-400 rounded px-2 py-0.5 text-sm outline-none"
+                             x-init="$nextTick(() => $el.focus())" />
+                    </template>
+                  </td>
+                  <!-- Editable description -->
+                  <td class="px-3 py-2 cursor-pointer hover:bg-yellow-50 min-w-[160px]"
+                      @click="startEdit('group_addresses', ga.address, 'description', annotations.group_addresses?.[ga.address]?.description ?? '')">
+                    <template x-if="editingKey !== 'group_addresses|' + ga.address + '|description'">
+                      <span :class="ga.description ? 'text-gray-600' : 'text-gray-300 italic text-xs'"
+                            x-text="ga.description || 'Beschreibung…'"></span>
+                    </template>
+                    <template x-if="editingKey === 'group_addresses|' + ga.address + '|description'">
+                      <input x-model="editValue" @blur="saveEdit()" @keydown.enter="saveEdit()"
+                             @keydown.escape.prevent="editingKey=''" @click.stop
+                             class="w-full border border-blue-400 rounded px-2 py-0.5 text-sm outline-none"
+                             x-init="$nextTick(() => $el.focus())" />
+                    </template>
+                  </td>
+                  <td class="px-4 py-3 font-mono text-sm font-semibold" x-text="ga.lastValue"></td>
+                  <td class="px-4 py-3 font-mono text-xs text-gray-400" x-text="ga.lastTs.split(' ')[1] ?? ga.lastTs"></td>
+                  <td class="px-4 py-3">
+                    <div class="flex flex-wrap gap-1">
+                      <template x-for="src in ga.srcs" :key="src">
+                        <span class="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded font-mono" x-text="src"></span>
+                      </template>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+              <tr x-show="filteredBusGAs.length === 0">
+                <td colspan="6" class="text-center text-gray-400 py-10 text-sm">Warte auf Telegramme vom Bus…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Project mode -->
+      <div x-show="project">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-lg font-semibold text-gray-700">Gruppenadressen (<span x-text="filteredGAs.length"></span>)</h2>
         <input x-model="gaSearch" type="search" placeholder="Suchen…"
@@ -203,6 +397,7 @@
               <th class="px-4 py-3 text-left">Name</th>
               <th class="px-4 py-3 text-left">DPT</th>
               <th class="px-4 py-3 text-left">Beschreibung</th>
+              <th class="px-4 py-3 text-left">Letzter Wert</th>
               <th class="px-4 py-3 text-left">Verknüpfte KOs</th>
             </tr>
           </thead>
@@ -213,6 +408,14 @@
                 <td class="px-4 py-3 font-medium" x-text="ga.name"></td>
                 <td class="px-4 py-3 font-mono text-xs" :title="dptTitle(ga.dpt)" x-text="ga.dpt ? (ga.dpt.main + (ga.dpt.sub != null ? '.' + String(ga.dpt.sub).padStart(3,'0') : '')) : '—'"></td>
                 <td class="px-4 py-3 text-gray-600 text-xs" x-text="ga.description || '—'"></td>
+                <td class="px-4 py-3">
+                  <template x-if="currentValues[ga.address]">
+                    <span class="font-mono text-sm text-gray-800"
+                          :title="currentValues[ga.address]?.ts"
+                          x-text="currentValues[ga.address]?.value"></span>
+                  </template>
+                  <span x-show="!currentValues[ga.address]" class="text-gray-300 text-sm">—</span>
+                </td>
                 <td class="px-4 py-3">
                   <div class="flex flex-wrap gap-1">
                     <template x-for="coId in (ga.communication_object_ids ?? [])" :key="coId">
@@ -229,6 +432,7 @@
           </tbody>
         </table>
       </div>
+      </div> <!-- end project mode -->
     </div>
 
     <!-- TOPOLOGY TAB -->
@@ -364,6 +568,63 @@
       </div>
     </div>
 
+    <!-- BUS MONITOR TAB -->
+    <div x-show="activeTab === 'bus_monitor'">
+      <div class="flex items-center gap-3 mb-4 flex-wrap">
+        <h2 class="text-lg font-semibold text-gray-700 mr-2">Bus-Monitor</h2>
+        <input x-model="liveLogFilter" type="search" placeholder="Filter (GA, Gerät, Wert, PA)…"
+               class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        <button @click="liveLogPaused = !liveLogPaused"
+                :class="liveLogPaused ? 'bg-yellow-100 border-yellow-300 text-yellow-800' : 'bg-white border-gray-300 text-gray-600'"
+                class="border rounded-lg px-3 py-1.5 text-sm hover:opacity-80 transition-colors"
+                x-text="liveLogPaused ? '▶ Fortsetzen' : '⏸ Pausieren'"></button>
+        <button @click="liveLog = []"
+                class="bg-white border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 transition-colors">🗑 Leeren</button>
+        <span class="text-gray-400 text-sm ml-auto" x-text="filteredLiveLog.length + ' / ' + liveLog.length + ' Einträge'"></span>
+        <span class="flex items-center gap-1.5 text-sm">
+          <span class="w-2 h-2 rounded-full flex-shrink-0"
+                :class="wsStatus === 'connected' ? 'bg-green-500' : 'bg-red-400'"></span>
+          <span class="text-gray-500" x-text="wsStatus === 'connected' ? ('Verbunden: ' + gatewayIP) : 'Kein Gateway'"></span>
+        </span>
+      </div>
+
+      <div class="bg-white rounded-xl shadow overflow-hidden">
+        <div class="overflow-auto max-h-[60vh]">
+          <table class="w-full text-sm font-mono">
+            <thead class="sticky top-0 bg-gray-50 text-gray-500 uppercase text-xs z-10">
+              <tr>
+                <th class="px-3 py-3 text-left whitespace-nowrap">Zeit</th>
+                <th class="px-3 py-3 text-left">PA</th>
+                <th class="px-3 py-3 text-left">Gerät</th>
+                <th class="px-3 py-3 text-left">GA</th>
+                <th class="px-3 py-3 text-left">GA-Name</th>
+                <th class="px-3 py-3 text-left">Wert</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="(entry, i) in filteredLiveLog" :key="i">
+                <tr class="border-t hover:bg-gray-50 transition-colors">
+                  <td class="px-3 py-2 text-gray-400 whitespace-nowrap text-xs" x-text="entry.ts.split(' ')[1]"></td>
+                  <td class="px-3 py-2 text-gray-600 text-xs" x-text="entry.src"></td>
+                  <td class="px-3 py-2 text-gray-600 text-xs max-w-[140px] truncate" x-text="entry.device" :title="entry.device"></td>
+                  <td class="px-3 py-2 text-blue-600 cursor-pointer hover:underline text-xs"
+                      x-text="entry.ga"
+                      @click="gaSearch = entry.ga; activeTab = 'group_addresses'"></td>
+                  <td class="px-3 py-2 text-gray-700 text-xs max-w-[180px] truncate" x-text="entry.ga_name" :title="entry.ga_name"></td>
+                  <td class="px-3 py-2 font-semibold text-gray-900 text-xs" x-text="entry.value"></td>
+                </tr>
+              </template>
+              <tr x-show="filteredLiveLog.length === 0">
+                <td colspan="6" class="text-center text-gray-400 py-12 font-sans">
+                  <span x-text="wsStatus === 'connected' ? 'Warte auf Telegramme…' : 'Kein Gateway verbunden. ⚙-Button zum Konfigurieren.'"></span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </main>
 </div>
 
@@ -386,6 +647,7 @@ function app() {
       { id: 'locations', label: 'Standorte' },
       { id: 'com_objects', label: 'Kommunikationsobjekte' },
       { id: 'functions', label: 'Funktionen' },
+      { id: 'bus_monitor', label: 'Bus-Monitor' },
     ],
     deviceSearch: '',
     gaSearch: '',
@@ -394,6 +656,163 @@ function app() {
     expandedTopology: new Set(),
     expandedCODevices: new Set(),
     highlightedCO: null,
+
+    // WebSocket & Live-Monitor state
+    ws: null,
+    wsStatus: 'disconnected',
+    gatewayIP: '',
+    gatewayPort: 3671,
+    gatewayError: '',
+    showGatewayConfig: false,
+    currentValues: {},
+    liveLog: [],
+    liveLogFilter: '',
+    liveLogPaused: false,
+
+    // Annotations (editable device/GA metadata)
+    annotations: { devices: {}, group_addresses: {} },
+    editingKey: '',
+    editValue: '',
+
+    init() {
+      this.connectWebSocket();
+      this.loadAnnotations();
+    },
+
+    async loadAnnotations() {
+      try {
+        const res = await fetch('/api/annotations');
+        if (res.ok) this.annotations = await res.json();
+      } catch (_) {}
+    },
+
+    startEdit(type, key, field, current) {
+      this.editingKey = `${type}|${key}|${field}`;
+      this.editValue = current;
+    },
+
+    async saveEdit() {
+      if (!this.editingKey) return;
+      const parts = this.editingKey.split('|');
+      const type = parts[0];
+      const field = parts[parts.length - 1];
+      const key = parts.slice(1, -1).join('|');
+      this.editingKey = '';
+      if (!this.annotations[type]) this.annotations[type] = {};
+      if (!this.annotations[type][key]) this.annotations[type][key] = {};
+      this.annotations[type][key][field] = this.editValue;
+      this.annotations = { ...this.annotations };  // trigger reactivity
+      await fetch('/api/annotations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.annotations),
+      });
+    },
+
+    get busDevices() {
+      const map = {};
+      for (const e of this.liveLog) {
+        if (!map[e.src]) map[e.src] = { individual_address: e.src, busName: e.device || '', count: 0, lastTs: e.ts, gas: [] };
+        const d = map[e.src];
+        d.count++;
+        if (e.ts > d.lastTs) d.lastTs = e.ts;
+        if (e.ga && !d.gas.includes(e.ga)) d.gas.push(e.ga);
+        if (!d.busName && e.device) d.busName = e.device;
+      }
+      return Object.values(map)
+        .map(d => ({ ...d, gas: d.gas.sort(),
+          name: this.annotations.devices?.[d.individual_address]?.name ?? d.busName ?? '',
+          description: this.annotations.devices?.[d.individual_address]?.description ?? '' }))
+        .sort((a, b) => a.individual_address.localeCompare(b.individual_address));
+    },
+
+    get filteredBusDevices() {
+      const q = this.deviceSearch.toLowerCase();
+      if (!q) return this.busDevices;
+      return this.busDevices.filter(d =>
+        d.individual_address.includes(q) || d.name.toLowerCase().includes(q) ||
+        (d.description || '').toLowerCase().includes(q));
+    },
+
+    get busGAs() {
+      const map = {};
+      for (const e of this.liveLog) {  // newest first — first occurrence = latest value
+        if (!map[e.ga]) map[e.ga] = { address: e.ga, busName: e.ga_name || '', lastValue: e.value, lastTs: e.ts, srcs: [] };
+        const g = map[e.ga];
+        if (!g.srcs.includes(e.src)) g.srcs.push(e.src);
+        if (!g.busName && e.ga_name) g.busName = e.ga_name;
+      }
+      return Object.values(map)
+        .map(g => ({ ...g, srcs: g.srcs.sort(),
+          name: this.annotations.group_addresses?.[g.address]?.name ?? g.busName ?? '',
+          description: this.annotations.group_addresses?.[g.address]?.description ?? '' }))
+        .sort((a, b) => a.address.localeCompare(b.address));
+    },
+
+    get filteredBusGAs() {
+      const q = this.gaSearch.toLowerCase();
+      if (!q) return this.busGAs;
+      return this.busGAs.filter(g =>
+        g.address.includes(q) || g.name.toLowerCase().includes(q) ||
+        (g.description || '').toLowerCase().includes(q));
+    },
+
+    connectWebSocket() {
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      this.ws = new WebSocket(`${protocol}//${location.host}/ws`);
+      this.ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'status') {
+          this.wsStatus = msg.connected ? 'connected' : 'disconnected';
+          this.gatewayIP = msg.ip || '';
+          this.gatewayPort = msg.port || 3671;
+        } else if (msg.type === 'snapshot') {
+          this.currentValues = msg.values;
+        } else if (msg.type === 'history') {
+          this.liveLog = msg.entries;  // replaces entire log (newest first)
+        } else if (msg.type === 'telegram') {
+          this.currentValues[msg.ga] = { value: msg.value, ts: msg.ts };
+          if (!this.liveLogPaused) {
+            this.liveLog = [msg, ...this.liveLog].slice(0, 1000);
+          }
+        }
+      };
+      this.ws.onclose = () => {
+        this.wsStatus = 'disconnected';
+        setTimeout(() => this.connectWebSocket(), 3000);
+      };
+      this.ws.onerror = () => { this.wsStatus = 'error'; };
+    },
+
+    skipToMonitor() {
+      this.phase = 'result';
+      this.activeTab = 'bus_monitor';
+    },
+
+    async saveGatewayConfig() {
+      this.gatewayError = '';
+      try {
+        const res = await fetch('/api/gateway', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ip: this.gatewayIP, port: this.gatewayPort }),
+        });
+        if (res.ok) this.showGatewayConfig = false;
+        else this.gatewayError = 'Fehler beim Speichern';
+      } catch (e) {
+        this.gatewayError = 'Netzwerkfehler: ' + e.message;
+      }
+    },
+
+    get filteredLiveLog() {
+      if (!this.liveLogFilter) return this.liveLog;
+      const f = this.liveLogFilter.toLowerCase();
+      return this.liveLog.filter(e =>
+        e.ga.includes(f) || (e.ga_name || '').toLowerCase().includes(f) ||
+        (e.device || '').toLowerCase().includes(f) || (e.value || '').toLowerCase().includes(f) ||
+        e.src.includes(f)
+      );
+    },
 
     onFileChange(event) {
       const file = event.target.files[0];
@@ -463,6 +882,7 @@ function app() {
     },
 
     exportMarkdown() {
+      if (!this.project) { this._exportBusMarkdown(); return; }
       const e = s => this._mdEsc(s);
       const d = dpt => this._dptStr(dpt);
       const lines = [];
@@ -531,7 +951,28 @@ function app() {
       this._download(lines.join('\n'), `${safe}.md`, 'text/markdown;charset=utf-8');
     },
 
+    _exportBusMarkdown() {
+      const e = s => this._mdEsc(s);
+      const lines = [
+        '# KNX Bus-Dokumentation',
+        `*Erstellt: ${new Date().toLocaleString('de-DE')}*`, '',
+        '## Geräte', '',
+        '| PA | Name | Beschreibung | Telegramme | Letztes Telegramm | GAs |',
+        '|----|------|--------------|:----------:|-------------------|-----|',
+      ];
+      for (const d of this.busDevices)
+        lines.push(`| ${e(d.individual_address)} | ${e(d.name)} | ${e(d.description)} | ${d.count} | ${e(d.lastTs)} | ${e(d.gas.join(', '))} |`);
+      lines.push('', '## Gruppenadressen', '',
+        '| Adresse | Name | Beschreibung | Letzter Wert | Zeitstempel | Quell-PAs |',
+        '|---------|------|--------------|--------------|-------------|-----------|');
+      for (const g of this.busGAs)
+        lines.push(`| ${e(g.address)} | ${e(g.name)} | ${e(g.description)} | ${e(g.lastValue)} | ${e(g.lastTs)} | ${e(g.srcs.join(', '))} |`);
+      lines.push('');
+      this._download(lines.join('\n'), 'knx_bus_dokumentation.md', 'text/markdown;charset=utf-8');
+    },
+
     exportPDF() {
+      if (!this.project) { this._exportBusPDF(); return; }
       const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       const d = dpt => this._dptStr(dpt);
 
@@ -619,6 +1060,37 @@ function app() {
 
     get projectName() {
       return this.project?.info?.name ?? this.selectedFile?.name ?? 'KNX Projekt';
+    },
+
+    _exportBusPDF() {
+      const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      const css = `
+        body{font-family:Arial,sans-serif;font-size:9pt;color:#1f2937;margin:15mm}
+        h1{font-size:16pt;border-bottom:2px solid #2563eb;padding-bottom:4px;margin-bottom:12px}
+        h2{font-size:12pt;color:#1d4ed8;margin-top:20px;border-bottom:1px solid #d1d5db;page-break-after:avoid}
+        table{width:100%;border-collapse:collapse;margin:6px 0;font-size:8pt}
+        th{background:#f3f4f6;text-align:left;padding:4px 6px;border:1px solid #d1d5db;font-weight:600}
+        td{padding:3px 6px;border:1px solid #d1d5db;vertical-align:top}
+        tr:nth-child(even) td{background:#f9fafb}
+        .mono{font-family:monospace}
+        @media print{h2{page-break-before:auto}}`;
+      let html = `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
+        <title>KNX Bus-Dokumentation</title><style>${css}</style></head><body>
+        <h1>KNX Bus-Dokumentation</h1>
+        <p style="color:#6b7280;font-size:8pt">Erstellt: ${new Date().toLocaleString('de-DE')}</p>`;
+      html += '<h2>Geräte</h2><table><thead><tr><th>PA</th><th>Name</th><th>Beschreibung</th><th>Telegramme</th><th>Letztes Telegramm</th><th>GAs</th></tr></thead><tbody>';
+      for (const d of this.busDevices)
+        html += `<tr><td class="mono">${esc(d.individual_address)}</td><td>${esc(d.name)}</td><td>${esc(d.description)}</td><td style="text-align:center">${d.count}</td><td class="mono">${esc(d.lastTs)}</td><td class="mono">${esc(d.gas.join(', '))}</td></tr>`;
+      html += '</tbody></table>';
+      html += '<h2>Gruppenadressen</h2><table><thead><tr><th>Adresse</th><th>Name</th><th>Beschreibung</th><th>Letzter Wert</th><th>Zeitstempel</th><th>Quell-PAs</th></tr></thead><tbody>';
+      for (const g of this.busGAs)
+        html += `<tr><td class="mono">${esc(g.address)}</td><td>${esc(g.name)}</td><td>${esc(g.description)}</td><td class="mono">${esc(g.lastValue)}</td><td class="mono">${esc(g.lastTs)}</td><td class="mono">${esc(g.srcs.join(', '))}</td></tr>`;
+      html += '</tbody></table></body></html>';
+      const win = window.open('', '_blank');
+      win.document.write(html);
+      win.document.close();
+      win.focus();
+      setTimeout(() => win.print(), 500);
     },
 
     get infoRows() {

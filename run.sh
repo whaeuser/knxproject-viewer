@@ -9,6 +9,6 @@ if [ ! -f "$VENV_DIR/bin/uvicorn" ]; then
   bash "$SCRIPT_DIR/setup.sh"
 fi
 
-echo "==> Starte KNX Project Viewer auf http://0.0.0.0:8000"
+echo "==> Starte KNX Project Viewer auf http://0.0.0.0:8002"
 cd "$SCRIPT_DIR"
-exec "$VENV_DIR/bin/uvicorn" server:app --host 0.0.0.0 --reload
+exec "$VENV_DIR/bin/uvicorn" server:app --host 0.0.0.0 --port 8002 --reload

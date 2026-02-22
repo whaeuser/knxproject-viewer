@@ -10,6 +10,7 @@ python3 -m venv "$VENV_DIR"
 echo "==> Installiere Abhängigkeiten …"
 "$VENV_DIR/bin/pip" install --upgrade pip --quiet
 "$VENV_DIR/bin/pip" install -r "$SCRIPT_DIR/requirements.txt" --quiet
+"$VENV_DIR/bin/pip" install websockets xknx --quiet
 
 echo "==> Installiere xknxproject (lokale Entwicklungsversion) …"
 "$VENV_DIR/bin/pip" install -e "$SCRIPT_DIR/../xknxproject" --quiet

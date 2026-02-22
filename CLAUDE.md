@@ -4,26 +4,37 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-**Setup** (creates `.venv/`, installs dependencies including `xknxproject` from `../xknxproject/`):
+**Setup** (creates `.venv/`, installs all dependencies including `xknxproject` from `../xknxproject/`):
 ```bash
 ./setup.sh
 ```
 
-**Run** (auto-runs setup if needed, starts server on `0.0.0.0:8002`):
+**Run — private server** (with bus monitor, port 8002):
 ```bash
 ./run.sh
-# or directly (without --reload to avoid competing KNX tunnel connections):
+# or directly:
 .venv/bin/uvicorn server:app --host 0.0.0.0 --port 8002
 ```
 
-> **Important:** Do not use `--reload` in production — it spawns multiple worker processes that each try to open a KNX tunnel, competing for the single tunnel slot on the gateway and causing connection failures.
+**Run — public server** (no bus monitor, safe for internet, port 8004):
+```bash
+./run_public.sh
+# or directly:
+.venv/bin/uvicorn server_public:app --host 0.0.0.0 --port 8004
+```
+
+Both servers can run simultaneously and share the same `index.html`. The frontend fetches `/api/mode` on startup to activate or deactivate bus features.
+
+> **Important:** Do not use `--reload` — it spawns multiple worker processes that each try to open a KNX tunnel, competing for the single tunnel slot on the gateway and causing connection failures.
 
 **Autostart** (macOS LaunchAgent — starts server on every login):
 ```bash
-./install-autostart.sh    # install & start immediately
-./uninstall-autostart.sh  # remove
+./install-autostart.sh          # private server on port 8002
+./install-autostart-public.sh   # public server on port 8004
+./uninstall-autostart.sh        # remove private autostart
+./uninstall-autostart-public.sh # remove public autostart
 ```
-The LaunchAgent calls uvicorn directly (without `--reload`) on port 8002.
+Both LaunchAgents call uvicorn directly (no `--reload`) on their respective ports.
 Logs are written to `logs/stdout.log`, `logs/stderr.log`, and `logs/knx_bus.log`.
 
 There are no test or lint commands configured.
@@ -32,11 +43,15 @@ Test `.knxproj` files are available at `../xknxproject/test/resources/*.knxproj`
 
 ## Architecture
 
-This is a minimal two-file application — `server.py` (backend) and `index.html` (frontend SPA).
+This is a minimal application — two server files sharing one `index.html` frontend SPA.
 
-### Backend (`server.py`)
+### Backend
 
-FastAPI with a lifespan context manager that starts the KNX connection task on startup.
+Two server files:
+- **`server.py`** — private server (port 8002): full features including KNX live connection, WebSocket, bus monitor, annotations
+- **`server_public.py`** — public server (port 8004): read-only, only `GET /`, `GET /api/mode`, `POST /api/parse`; no KNX connection, no WebSocket, no state
+
+`server.py` uses a FastAPI lifespan context manager that starts the KNX connection task on startup.
 
 #### Global state (`state` dict)
 ```python
@@ -59,6 +74,7 @@ state = {
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/` | Serves `index.html` |
+| `GET` | `/api/mode` | Returns `{public: false}` — signals full-feature mode to frontend |
 | `GET` | `/api/gateway` | Returns `{ip, port, connected, language}` |
 | `POST` | `/api/gateway` | Saves `{ip, port, language}` to `config.json`, restarts KNX connection |
 | `POST` | `/api/parse` | Parses uploaded `.knxproj` file; registers DPT map with xknx |
@@ -108,13 +124,17 @@ Rotates daily, keeps 30 days. Pre-loaded into `telegram_buffer` on startup (last
 
 Vanilla HTML with Alpine.js v3 (state management) and Tailwind CSS (styling), all loaded from CDN. No build step.
 
+#### Startup (`init()`)
+Fetches `/api/mode` first. If `public: true`, sets `publicMode = true` and skips WebSocket and annotations. If `public: false` (default), connects WebSocket and loads annotations.
+
 #### Two phases
 
-1. **Upload phase** — drag-and-drop or file picker, optional password/language inputs; button "Ohne Projektdatei → Nur Bus-Monitor" jumps straight to result phase with Bus-Monitor active
+1. **Upload phase** — drag-and-drop or file picker, optional password input; language from gateway config is used automatically; button "Ohne Projektdatei → Nur Bus-Monitor" jumps to result phase (hidden in public mode)
 2. **Result phase** — eight tabs (see below)
 
 #### Alpine.js state (key additions for live features)
 ```javascript
+publicMode,                          // true when served by server_public.py — disables all bus features
 ws, wsStatus,                        // WebSocket instance and status ('connected'/'disconnected')
 gatewayIP, gatewayPort,              // current gateway config
 gatewayLanguage,                     // 'de-DE' (default) or 'en-US' — persisted in config.json
@@ -144,7 +164,8 @@ Alpine.js uses array spread (`[msg, ...liveLog].slice(0, 1000)`) for live update
 - **Gruppenadressen**: searchable; "Letzter Wert" column shows live value from `currentValues`; linked KO badges navigate to KO tab
 - **Topologie**: collapsible area → line → device tree
 - **Kommunikationsobjekte**: COs grouped by device, collapsible; search auto-expands sections; row click navigates to GA tab
-- **Funktionen**: function groups with linked GAs — **tab only shown when project contains at least one function** (hidden via `visibleTabs` computed getter)
+- **Funktionen**: function groups with linked GAs — tab only shown when project contains ≥1 function (via `visibleTabs`)
+- **Bus-Monitor**: hidden entirely in public mode (via `visibleTabs`)
 - **DPT/Flags tooltips**: hover on DPT or Flags cell for human-readable description
 
 **Without project file (bus-only mode):**

@@ -101,9 +101,15 @@ async def _process_telegram(telegram):
         raw_value = str(telegram.payload)
 
     # Use xknx's decoded value (DPT-aware) if available, otherwise fall back to raw
+    dpt = ""
     if telegram.decoded_data is not None:
         decoded = telegram.decoded_data.value
-        unit = getattr(telegram.decoded_data.transcoder, "unit", "") or ""
+        transcoder = telegram.decoded_data.transcoder
+        unit = getattr(transcoder, "unit", "") or ""
+        main = getattr(transcoder, "dpt_main_number", None)
+        sub = getattr(transcoder, "dpt_sub_number", None)
+        if main is not None:
+            dpt = f"{main}.{str(sub).zfill(3)}" if sub is not None else str(main)
         if isinstance(decoded, bool):
             value = "Ein" if decoded else "Aus"
         elif isinstance(decoded, float):
@@ -124,6 +130,7 @@ async def _process_telegram(telegram):
         "ga_name": ga_name,
         "value": value,
         "raw": raw_value,
+        "dpt": dpt,
     }
 
     bus_logger.info(f"{ts} | {src} | {device_name} | {ga} | {ga_name} | {value}")

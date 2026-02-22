@@ -24,6 +24,7 @@ Web-UI zum Hochladen, Analysieren und Dokumentieren von `.knxproj`-Dateien – m
 ### Live Bus-Monitor (nur privater Server, Port 8002)
 - Echtzeit-Telegramme via WebSocket
 - **DPT-aware Dekodierung**: Werte mit Einheit (`21.34 °C`, `75 %`, `Ein/Aus`) wenn Projektdatei geladen
+- Tooltip auf dem Wert zeigt DPT-Typ und Rohwert, z.B. `DPT: 9.001 | Raw: DPTArray((0x0c, 0x1a))`
 - **Letzter Wert** pro Gruppenadresse in der GA-Tabelle
 - Persistentes Log mit täglicher Rotation (`logs/knx_bus.log`, 30 Tage)
 - **Bus-only-Modus**: Geräte und GAs aus Bus-Telegrammen ableiten ohne Projektdatei

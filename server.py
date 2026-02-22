@@ -28,6 +28,7 @@ state: dict = {
     "connected": False,
     "gateway_ip": "",
     "gateway_port": 3671,
+    "language": "de-DE",
     "project_data": None,
     "ga_dpt_map": {},
     "current_values": {},
@@ -40,7 +41,7 @@ state: dict = {
 def load_config() -> dict:
     if CONFIG_PATH.exists():
         return json.loads(CONFIG_PATH.read_text())
-    return {"gateway_ip": "", "gateway_port": 3671}
+    return {"gateway_ip": "", "gateway_port": 3671, "language": "de-DE"}
 
 
 def save_config(cfg: dict):
@@ -133,6 +134,7 @@ async def knx_connect_loop():
     port = cfg.get("gateway_port", 3671)
     state["gateway_ip"] = ip
     state["gateway_port"] = port
+    state["language"] = cfg.get("language", "de-DE")
 
     if not ip:
         return
@@ -237,12 +239,18 @@ def get_gateway():
         "ip": state["gateway_ip"],
         "port": state["gateway_port"],
         "connected": state["connected"],
+        "language": state["language"],
     }
 
 
 @app.post("/api/gateway")
 async def set_gateway(data: dict):
-    save_config({"gateway_ip": data["ip"], "gateway_port": data.get("port", 3671)})
+    save_config({
+        "gateway_ip": data["ip"],
+        "gateway_port": data.get("port", 3671),
+        "language": data.get("language", "de-DE"),
+    })
+    state["language"] = data.get("language", "de-DE")
     await start_connect_task()
     return {"ok": True}
 
@@ -296,6 +304,7 @@ async def websocket_endpoint(ws: WebSocket):
         "connected": state["connected"],
         "ip": state["gateway_ip"],
         "port": state["gateway_port"],
+        "language": state["language"],
     })
     await ws.send_json({"type": "snapshot", "values": state["current_values"]})
     await ws.send_json({

@@ -40,11 +40,6 @@
         <input type="password" x-model="password" placeholder="Leer lassen wenn nicht geschützt"
           class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
       </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Sprache (optional)</label>
-        <input type="text" x-model="language" placeholder="z.B. de-DE"
-          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-      </div>
     </div>
 
     <!-- Error -->
@@ -107,6 +102,14 @@
             <input x-model.number="gatewayPort" type="number" min="1" max="65535"
                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
           </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Sprache</label>
+            <select x-model="gatewayLanguage"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+              <option value="de-DE">Deutsch (de-DE)</option>
+              <option value="en-US">English (en-US)</option>
+            </select>
+          </div>
         </div>
         <p x-show="gatewayError" x-text="gatewayError" class="mt-2 text-sm text-red-600"></p>
         <div class="flex gap-2 mt-5">
@@ -120,7 +123,7 @@
 
     <!-- Tabs -->
     <div class="max-w-7xl mx-auto px-4 flex gap-1 overflow-x-auto">
-      <template x-for="tab in tabs" :key="tab.id">
+      <template x-for="tab in visibleTabs" :key="tab.id">
         <button
           @click="activeTab = tab.id"
           :class="activeTab === tab.id ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-800'"
@@ -662,6 +665,7 @@ function app() {
     wsStatus: 'disconnected',
     gatewayIP: '',
     gatewayPort: 3671,
+    gatewayLanguage: 'de-DE',
     gatewayError: '',
     showGatewayConfig: false,
     currentValues: {},
@@ -766,6 +770,7 @@ function app() {
           this.wsStatus = msg.connected ? 'connected' : 'disconnected';
           this.gatewayIP = msg.ip || '';
           this.gatewayPort = msg.port || 3671;
+          this.gatewayLanguage = msg.language || 'de-DE';
         } else if (msg.type === 'snapshot') {
           this.currentValues = msg.values;
         } else if (msg.type === 'history') {
@@ -795,13 +800,20 @@ function app() {
         const res = await fetch('/api/gateway', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ip: this.gatewayIP, port: this.gatewayPort }),
+          body: JSON.stringify({ ip: this.gatewayIP, port: this.gatewayPort, language: this.gatewayLanguage }),
         });
         if (res.ok) this.showGatewayConfig = false;
         else this.gatewayError = 'Fehler beim Speichern';
       } catch (e) {
         this.gatewayError = 'Netzwerkfehler: ' + e.message;
       }
+    },
+
+    get visibleTabs() {
+      return this.tabs.filter(tab => {
+        if (tab.id === 'functions') return this.project && Object.keys(this.project.functions ?? {}).length > 0;
+        return true;
+      });
     },
 
     get filteredLiveLog() {
@@ -831,7 +843,7 @@ function app() {
       const form = new FormData();
       form.append('file', this.selectedFile);
       form.append('password', this.password);
-      form.append('language', this.language);
+      form.append('language', this.gatewayLanguage);
       try {
         const res = await fetch('/api/parse', { method: 'POST', body: form });
         if (!res.ok) {

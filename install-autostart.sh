@@ -17,7 +17,12 @@ cat > "$PLIST_DST" <<EOF
     <string>${PLIST_LABEL}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>${SCRIPT_DIR}/run.sh</string>
+        <string>${SCRIPT_DIR}/.venv/bin/uvicorn</string>
+        <string>server:app</string>
+        <string>--host</string>
+        <string>0.0.0.0</string>
+        <string>--port</string>
+        <string>8002</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -37,5 +42,5 @@ launchctl unload "$PLIST_DST" 2>/dev/null || true
 launchctl load -w "$PLIST_DST"
 
 echo "==> Autostart installiert: $PLIST_DST"
-echo "==> Server läuft jetzt und startet bei jedem Login neu."
+echo "==> Server läuft jetzt auf http://localhost:8002 und startet bei jedem Login neu."
 echo "==> Logs: $LOG_DIR/"

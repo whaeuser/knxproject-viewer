@@ -228,6 +228,11 @@ async def chrome_devtools():
     return {}
 
 
+@app.get("/api/mode")
+def get_mode():
+    return {"public": False}
+
+
 @app.get("/")
 async def root():
     return FileResponse(INDEX_HTML)

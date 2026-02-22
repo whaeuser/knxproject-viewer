@@ -94,6 +94,12 @@ async def _process_telegram(telegram):
                 ga_name = gad.get("name", "")
                 break
 
+    # Raw value (payload before DPT decoding)
+    if hasattr(telegram.payload, "value") and telegram.payload.value is not None:
+        raw_value = str(telegram.payload.value)
+    else:
+        raw_value = str(telegram.payload)
+
     # Use xknx's decoded value (DPT-aware) if available, otherwise fall back to raw
     if telegram.decoded_data is not None:
         decoded = telegram.decoded_data.value
@@ -104,10 +110,8 @@ async def _process_telegram(telegram):
             value = f"{decoded:.2f}{' ' + unit if unit else ''}"
         else:
             value = f"{decoded}{' ' + unit if unit else ''}"
-    elif hasattr(telegram.payload, "value") and telegram.payload.value is not None:
-        value = str(telegram.payload.value)
     else:
-        value = str(telegram.payload)
+        value = raw_value
 
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
@@ -119,6 +123,7 @@ async def _process_telegram(telegram):
         "ga": ga,
         "ga_name": ga_name,
         "value": value,
+        "raw": raw_value,
     }
 
     bus_logger.info(f"{ts} | {src} | {device_name} | {ga} | {ga_name} | {value}")

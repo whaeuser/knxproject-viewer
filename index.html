@@ -619,7 +619,7 @@
                       x-text="entry.ga"
                       @click="gaSearch = entry.ga; activeTab = 'group_addresses'"></td>
                   <td class="px-3 py-2 text-gray-700 text-xs min-w-[220px] max-w-[280px] truncate" x-text="entry.ga_name" :title="entry.ga_name"></td>
-                  <td class="px-3 py-2 font-semibold text-gray-900 text-xs" x-text="entry.value"></td>
+                  <td class="px-3 py-2 font-semibold text-gray-900 text-xs" x-text="entry.value" :title="entry.raw && entry.raw !== entry.value ? 'Raw: ' + entry.raw : ''"></td>
                 </tr>
               </template>
               <tr x-show="filteredLiveLog.length === 0">

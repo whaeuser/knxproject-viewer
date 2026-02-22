@@ -77,7 +77,9 @@ state = {
 | `GET` | `/api/mode` | Returns `{public: false}` — signals full-feature mode to frontend |
 | `GET` | `/api/gateway` | Returns `{ip, port, connected, language}` |
 | `POST` | `/api/gateway` | Saves `{ip, port, language}` to `config.json`, restarts KNX connection |
-| `POST` | `/api/parse` | Parses uploaded `.knxproj` file; registers DPT map with xknx |
+| `POST` | `/api/parse` | Parses uploaded `.knxproj` file; saves result to `last_project.json`; registers DPT map with xknx |
+| `GET` | `/api/last-project/info` | Returns `{filename}` of last parsed project, or 404 |
+| `GET` | `/api/last-project/data` | Returns full parsed project JSON from state, or 404 |
 | `GET` | `/api/current-values` | Returns `current_values` dict |
 | `GET` | `/api/log?lines=N` | Returns last N entries from `logs/knx_bus.log` as JSON |
 | `GET` | `/api/annotations` | Returns `annotations.json` |
@@ -115,8 +117,9 @@ xknx then sets `telegram.decoded_data` on each incoming telegram. `_process_tele
 Rotates daily, keeps 30 days. Pre-loaded into `telegram_buffer` on startup (last 500 lines).
 
 #### Persistent files
-- `config.json` — `{"gateway_ip": "...", "gateway_port": 3671, "language": "de-DE"}`
+- `config.json` — `{"gateway_ip": "...", "gateway_port": 3671, "language": "de-DE", "last_project_filename": "mein.knxproj"}`
 - `annotations.json` — `{"devices": {"1.1.5": {"name": "...", "description": "..."}}, "group_addresses": {"1/2/3": {...}}}`
+- `last_project.json` — full parsed project JSON, written after each successful parse; loaded into `state["project_data"]` on startup (avoids re-upload after restart; also pre-populates `ga_dpt_map` for DPT decoding)
 
 ---
 
@@ -125,16 +128,17 @@ Rotates daily, keeps 30 days. Pre-loaded into `telegram_buffer` on startup (last
 Vanilla HTML with Alpine.js v3 (state management) and Tailwind CSS (styling), all loaded from CDN. No build step.
 
 #### Startup (`init()`)
-Fetches `/api/mode` first. If `public: true`, sets `publicMode = true` and skips WebSocket and annotations. If `public: false` (default), connects WebSocket and loads annotations.
+Fetches `/api/mode` first. If `public: true`, sets `publicMode = true` and skips WebSocket, annotations, and last-project check. If `public: false` (default), connects WebSocket, loads annotations, and calls `loadLastProjectInfo()` to check for a previously parsed project.
 
 #### Two phases
 
-1. **Upload phase** — drag-and-drop or file picker, optional password input; language from gateway config is used automatically; button "Ohne Projektdatei → Nur Bus-Monitor" jumps to result phase (hidden in public mode)
+1. **Upload phase** — drag-and-drop or file picker, optional password input; language from gateway config used automatically; "Zuletzt: &lt;filename&gt;" button loads last project without re-upload (private mode only); "Ohne Projektdatei → Nur Bus-Monitor" button (private mode only)
 2. **Result phase** — eight tabs (see below)
 
 #### Alpine.js state (key additions for live features)
 ```javascript
 publicMode,                          // true when served by server_public.py — disables all bus features
+lastProjectFilename,                 // filename of last parsed project (shown as quick-load button)
 ws, wsStatus,                        // WebSocket instance and status ('connected'/'disconnected')
 gatewayIP, gatewayPort,              // current gateway config
 gatewayLanguage,                     // 'de-DE' (default) or 'en-US' — persisted in config.json

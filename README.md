@@ -36,6 +36,8 @@ Web-UI zum Hochladen, Analysieren und Dokumentieren von `.knxproj`-Dateien – m
 
 ## Setup & Start
 
+### macOS / Linux
+
 ```bash
 # Einmalig einrichten (.venv erstellen, Abhängigkeiten installieren)
 ./setup.sh
@@ -50,6 +52,19 @@ Web-UI zum Hochladen, Analysieren und Dokumentieren von `.knxproj`-Dateien – m
 ```
 
 Beide Server können gleichzeitig laufen.
+
+### Windows
+
+```bat
+:: Einmalig einrichten (.venv erstellen, Abhängigkeiten installieren)
+setup.bat
+
+:: Privater Server starten — Bus-Monitor, Port 8002
+run.bat
+:: → http://localhost:8002
+```
+
+Voraussetzung: Python 3.11+ im PATH. `xknxproject` muss als Schwester-Verzeichnis `../xknxproject/` vorhanden sein.
 
 ---
 
@@ -74,9 +89,11 @@ knxproject-viewer/
 ├── server_public.py             # Öffentlicher Server (Port 8004): nur Projektbetrachter
 ├── index.html                   # Single-Page-Frontend (von beiden Servern geteilt)
 ├── requirements.txt             # Python-Abhängigkeiten
-├── setup.sh                     # Erstellt .venv und installiert alles
-├── run.sh                       # Startet privaten Server
-├── run_public.sh                # Startet öffentlichen Server
+├── setup.sh                     # Erstellt .venv und installiert alles (macOS/Linux)
+├── run.sh                       # Startet privaten Server (macOS/Linux)
+├── run_public.sh                # Startet öffentlichen Server (macOS/Linux)
+├── setup.bat                    # Erstellt .venv und installiert alles (Windows)
+├── run.bat                      # Startet privaten Server (Windows)
 ├── install-autostart.sh         # macOS LaunchAgent für privaten Server
 ├── install-autostart-public.sh  # macOS LaunchAgent für öffentlichen Server
 ├── uninstall-autostart.sh

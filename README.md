@@ -40,7 +40,7 @@ Web-UI zum Hochladen, Analysieren und Dokumentieren von `.knxproj`-Dateien – m
 
 ## Setup & Verwendung
 
-Voraussetzung: Python 3.11+
+Voraussetzung: Python 3.10+ muss auf dem System installiert sein (alle weiteren Pakete landen im isolierten `.venv/`).
 
 ```bash
 # Einmalig: virtuelle Umgebung erstellen und Pakete installieren

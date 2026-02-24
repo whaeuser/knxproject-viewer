@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="$SCRIPT_DIR/.venv"
 LOG_DIR="$SCRIPT_DIR/logs"
+CFG="$SCRIPT_DIR/config.json"
 PID_FILE="$SCRIPT_DIR/.server.pid"
 PID_FILE_PUBLIC="$SCRIPT_DIR/.server-public.pid"
 
@@ -12,6 +13,43 @@ _check_venv() {
         echo "Fehler: Virtuelle Umgebung nicht gefunden. Bitte zuerst 'openknxviewer setup' ausführen."
         exit 1
     fi
+}
+
+# Liest einen Wert aus config.json; gibt $default zurück wenn nicht gesetzt
+_cfg_get() {
+    local key="$1" default="$2"
+    python3 - "$CFG" "$key" "$default" <<'EOF'
+import json, pathlib, sys
+p = pathlib.Path(sys.argv[1])
+d = json.loads(p.read_text()) if p.exists() else {}
+print(d.get(sys.argv[2], sys.argv[3]))
+EOF
+}
+
+# Schreibt einen Integer-Wert in config.json
+_cfg_set_int() {
+    local key="$1" value="$2"
+    python3 - "$CFG" "$key" "$value" <<'EOF'
+import json, pathlib, sys
+p = pathlib.Path(sys.argv[1])
+d = json.loads(p.read_text()) if p.exists() else {}
+d[sys.argv[2]] = int(sys.argv[3])
+p.write_text(json.dumps(d, indent=2))
+EOF
+}
+
+# Gibt den konfigurierten Server-Port zurück; fragt beim ersten Mal nach
+_get_server_port() {
+    local cfg_key="$1" default="$2" label="$3"
+    local stored
+    stored=$(_cfg_get "$cfg_key" "")
+    if [[ -z "$stored" ]]; then
+        read -r -p "${label} Port [${default}]: " input
+        stored="${input:-$default}"
+        _cfg_set_int "$cfg_key" "$stored"
+        echo "  Port $stored in config.json gespeichert." >&2
+    fi
+    echo "$stored"
 }
 
 # ── setup ─────────────────────────────────────────────────────────────────────
@@ -28,31 +66,47 @@ cmd_setup() {
 # ── start ─────────────────────────────────────────────────────────────────────
 cmd_start() {
     _check_venv
-    local public=false
-    for arg in "$@"; do [[ "$arg" == "--public" ]] && public=true; done
+    local public=false port_override=""
+    local args=("$@") i=0
+    while [[ $i -lt ${#args[@]} ]]; do
+        case "${args[$i]}" in
+            --public) public=true ;;
+            --port)   i=$((i+1)); port_override="${args[$i]}" ;;
+        esac
+        i=$((i+1))
+    done
     mkdir -p "$LOG_DIR"
 
+    local cfg_key default label pid_file server stdout_log stderr_log
     if $public; then
-        if [[ -f "$PID_FILE_PUBLIC" ]] && kill -0 "$(cat "$PID_FILE_PUBLIC")" 2>/dev/null; then
-            echo "Öffentlicher Server läuft bereits (PID $(cat "$PID_FILE_PUBLIC"), Port 8004)"
-            exit 0
-        fi
-        cd "$SCRIPT_DIR"
-        "$VENV_DIR/bin/uvicorn" server_public:app --host 0.0.0.0 --port 8004 \
-            >>"$LOG_DIR/stdout-public.log" 2>>"$LOG_DIR/stderr-public.log" &
-        echo $! >"$PID_FILE_PUBLIC"
-        echo "Öffentlicher Server gestartet (PID $!, Port 8004)"
+        cfg_key="server_port_public"; default=8004
+        label="Öffentlicher Server"; pid_file="$PID_FILE_PUBLIC"
+        server="server_public:app"
+        stdout_log="stdout-public.log"; stderr_log="stderr-public.log"
     else
-        if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
-            echo "Privater Server läuft bereits (PID $(cat "$PID_FILE"), Port 8002)"
-            exit 0
-        fi
-        cd "$SCRIPT_DIR"
-        "$VENV_DIR/bin/uvicorn" server:app --host 0.0.0.0 --port 8002 \
-            >>"$LOG_DIR/stdout.log" 2>>"$LOG_DIR/stderr.log" &
-        echo $! >"$PID_FILE"
-        echo "Privater Server gestartet (PID $!, Port 8002)"
+        cfg_key="server_port"; default=8002
+        label="Privater Server"; pid_file="$PID_FILE"
+        server="server:app"
+        stdout_log="stdout.log"; stderr_log="stderr.log"
     fi
+
+    local port
+    if [[ -n "$port_override" ]]; then
+        port="$port_override"
+        _cfg_set_int "$cfg_key" "$port"
+    else
+        port=$(_get_server_port "$cfg_key" "$default" "$label")
+    fi
+
+    if [[ -f "$pid_file" ]] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
+        echo "$label läuft bereits (PID $(cat "$pid_file"), Port $port)"
+        exit 0
+    fi
+    cd "$SCRIPT_DIR"
+    "$VENV_DIR/bin/uvicorn" "$server" --host 0.0.0.0 --port "$port" \
+        >>"$LOG_DIR/$stdout_log" 2>>"$LOG_DIR/$stderr_log" &
+    echo $! >"$pid_file"
+    echo "$label gestartet (PID $!, Port $port)"
 }
 
 # ── stop ──────────────────────────────────────────────────────────────────────
@@ -91,12 +145,12 @@ cmd_stop() {
 
 # ── status ────────────────────────────────────────────────────────────────────
 _status_one() {
-    local pid_file="$1" label="$2" port="$3"
+    local pid_file="$1" label="$2" port="$3" is_private="${4:-false}"
     if [[ -f "$pid_file" ]] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
         printf "%-24s läuft   (PID %s, Port %s)\n" "$label:" "$(cat "$pid_file")" "$port"
-        if [[ "$port" == "8002" ]] && command -v curl &>/dev/null; then
+        if [[ "$is_private" == "true" ]] && command -v curl &>/dev/null; then
             local gw
-            gw=$(curl -sf "http://localhost:8002/api/gateway" 2>/dev/null || true)
+            gw=$(curl -sf "http://localhost:${port}/api/gateway" 2>/dev/null || true)
             if [[ -n "$gw" ]]; then
                 python3 - "$gw" <<'EOF'
 import json, sys
@@ -115,15 +169,17 @@ EOF
 }
 
 cmd_status() {
-    _status_one "$PID_FILE"        "Privater Server"     "8002"
-    _status_one "$PID_FILE_PUBLIC" "Öffentlicher Server" "8004"
+    local port_priv port_pub
+    port_priv=$(_cfg_get "server_port"        "8002")
+    port_pub=$( _cfg_get "server_port_public" "8004")
+    _status_one "$PID_FILE"        "Privater Server"     "$port_priv" "true"
+    _status_one "$PID_FILE_PUBLIC" "Öffentlicher Server" "$port_pub"  "false"
 }
 
 # ── logs ──────────────────────────────────────────────────────────────────────
 cmd_logs() {
     local lines=50 follow=false
-    local args=("$@")
-    local i=0
+    local args=("$@") i=0
     while [[ $i -lt ${#args[@]} ]]; do
         case "${args[$i]}" in
             --lines|-n) i=$((i+1)); lines="${args[$i]}" ;;
@@ -145,28 +201,27 @@ cmd_logs() {
 
 # ── gateway ───────────────────────────────────────────────────────────────────
 cmd_gateway() {
-    local ip="" port="" lang=""
-    local args=("$@")
-    local i=0
+    local ip="" gw_port="" lang=""
+    local args=("$@") i=0
     while [[ $i -lt ${#args[@]} ]]; do
         case "${args[$i]}" in
             --ip)       i=$((i+1)); ip="${args[$i]}" ;;
-            --port)     i=$((i+1)); port="${args[$i]}" ;;
+            --port)     i=$((i+1)); gw_port="${args[$i]}" ;;
             --language) i=$((i+1)); lang="${args[$i]}" ;;
         esac
         i=$((i+1))
     done
 
-    local cfg="$SCRIPT_DIR/config.json"
-
-    if [[ -z "$ip" && -z "$port" && -z "$lang" ]]; then
-        if [[ -f "$cfg" ]]; then
-            python3 - "$cfg" <<'EOF'
+    if [[ -z "$ip" && -z "$gw_port" && -z "$lang" ]]; then
+        if [[ -f "$CFG" ]]; then
+            python3 - "$CFG" <<'EOF'
 import json, sys
 d = json.load(open(sys.argv[1]))
-print(f"IP:       {d.get('gateway_ip','(nicht gesetzt)')}")
-print(f"Port:     {d.get('gateway_port', 3671)}")
-print(f"Sprache:  {d.get('language', 'de-DE')}")
+print(f"Gateway-IP:    {d.get('gateway_ip','(nicht gesetzt)')}")
+print(f"Gateway-Port:  {d.get('gateway_port', 3671)}")
+print(f"Sprache:       {d.get('language', 'de-DE')}")
+print(f"Server-Port:   {d.get('server_port', 8002)}")
+print(f"Public-Port:   {d.get('server_port_public', 8004)}")
 EOF
         else
             echo "config.json nicht gefunden"
@@ -175,18 +230,21 @@ EOF
     fi
 
     # Server läuft → API verwenden
+    local srv_port
+    srv_port=$(_cfg_get "server_port" "8002")
     if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null && command -v curl &>/dev/null; then
         local current
-        current=$(curl -sf http://localhost:8002/api/gateway 2>/dev/null || true)
+        current=$(curl -sf "http://localhost:${srv_port}/api/gateway" 2>/dev/null || true)
         if [[ -n "$current" ]]; then
-            python3 - "$current" "$ip" "$port" "$lang" <<'EOF'
+            python3 - "$current" "$ip" "$gw_port" "$lang" <<'EOF'
 import json, sys, urllib.request
 d    = json.loads(sys.argv[1])
 ip   = sys.argv[2] if sys.argv[2] else d['ip']
 port = int(sys.argv[3]) if sys.argv[3] else d['port']
 lang = sys.argv[4] if sys.argv[4] else d.get('language', 'de-DE')
 payload = json.dumps({'ip': ip, 'port': port, 'language': lang}).encode()
-req = urllib.request.Request('http://localhost:8002/api/gateway',
+req = urllib.request.Request(
+    f"http://localhost:{d.get('port', 8002)}/api/gateway",
     data=payload, headers={'Content-Type': 'application/json'}, method='POST')
 urllib.request.urlopen(req)
 print(f'Gateway aktualisiert (via API): {ip}:{port}, Sprache: {lang}')
@@ -196,7 +254,7 @@ EOF
     fi
 
     # Server gestoppt → config.json direkt schreiben
-    python3 - "$cfg" "$ip" "$port" "$lang" <<'EOF'
+    python3 - "$CFG" "$ip" "$gw_port" "$lang" <<'EOF'
 import json, pathlib, sys
 p    = pathlib.Path(sys.argv[1])
 d    = json.loads(p.read_text()) if p.exists() else {}
@@ -221,15 +279,17 @@ cmd_autostart() {
         [[ "$arg" == "--remove" ]] && remove=true
     done
 
-    local label port server stdout stderr
+    local label cfg_key default server stdout_log stderr_log
     if $public; then
         label="com.knxproject-viewer-public"
-        port=8004; server="server_public:app"
-        stdout="stdout-public.log"; stderr="stderr-public.log"
+        cfg_key="server_port_public"; default=8004
+        server="server_public:app"
+        stdout_log="stdout-public.log"; stderr_log="stderr-public.log"
     else
         label="com.knxproject-viewer"
-        port=8002; server="server:app"
-        stdout="stdout.log"; stderr="stderr.log"
+        cfg_key="server_port"; default=8002
+        server="server:app"
+        stdout_log="stdout.log"; stderr_log="stderr.log"
     fi
     local plist="$HOME/Library/LaunchAgents/${label}.plist"
 
@@ -245,6 +305,8 @@ cmd_autostart() {
     fi
 
     _check_venv
+    local port
+    port=$(_cfg_get "$cfg_key" "$default")
     mkdir -p "$LOG_DIR"
     cat >"$plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -262,8 +324,8 @@ cmd_autostart() {
     <key>RunAtLoad</key>         <true/>
     <key>KeepAlive</key>         <true/>
     <key>WorkingDirectory</key>  <string>${SCRIPT_DIR}</string>
-    <key>StandardOutPath</key>   <string>${LOG_DIR}/${stdout}</string>
-    <key>StandardErrorPath</key> <string>${LOG_DIR}/${stderr}</string>
+    <key>StandardOutPath</key>   <string>${LOG_DIR}/${stdout_log}</string>
+    <key>StandardErrorPath</key> <string>${LOG_DIR}/${stderr_log}</string>
 </dict>
 </plist>
 EOF
@@ -291,26 +353,26 @@ cmd_update() {
 usage() {
     echo "Verwendung: openknxviewer <Befehl> [Optionen]"
     echo ""
-    echo "  setup                                  Umgebung erstellen & Pakete installieren"
-    echo "  start  [--public]                      Server starten (Standard: Port 8002)"
-    echo "  stop   [--public | --all]              Server stoppen"
-    echo "  status                                 Server- und Gateway-Status anzeigen"
-    echo "  logs   [--lines N] [--follow]          Bus-Log anzeigen"
-    echo "  gateway                                Gateway-Konfiguration anzeigen"
-    echo "  gateway --ip X [--port Y] [--language L]  Gateway konfigurieren"
-    echo "  update                                 Alle Pakete aktualisieren"
-    echo "  autostart          [--public]          macOS LaunchAgent installieren"
-    echo "  autostart --remove [--public]          macOS LaunchAgent entfernen"
+    echo "  setup                                       Umgebung erstellen & Pakete installieren"
+    echo "  start  [--public] [--port N]                Server starten (fragt Port beim ersten Mal)"
+    echo "  stop   [--public | --all]                   Server stoppen"
+    echo "  status                                      Server- und Gateway-Status anzeigen"
+    echo "  logs   [--lines N] [--follow]               Bus-Log anzeigen"
+    echo "  gateway                                     Konfiguration anzeigen"
+    echo "  gateway --ip X [--port Y] [--language L]    KNX-Gateway konfigurieren"
+    echo "  update                                      Alle Pakete aktualisieren"
+    echo "  autostart          [--public]               macOS LaunchAgent installieren"
+    echo "  autostart --remove [--public]               macOS LaunchAgent entfernen"
 }
 
 # ── dispatch ──────────────────────────────────────────────────────────────────
 case "${1:-}" in
-    setup)   shift; cmd_setup   "$@" ;;
-    start)   shift; cmd_start   "$@" ;;
-    stop)    shift; cmd_stop    "$@" ;;
-    status)  shift; cmd_status  "$@" ;;
-    logs)    shift; cmd_logs    "$@" ;;
-    gateway) shift; cmd_gateway "$@" ;;
+    setup)     shift; cmd_setup     "$@" ;;
+    start)     shift; cmd_start     "$@" ;;
+    stop)      shift; cmd_stop      "$@" ;;
+    status)    shift; cmd_status    "$@" ;;
+    logs)      shift; cmd_logs      "$@" ;;
+    gateway)   shift; cmd_gateway   "$@" ;;
     update)    shift; cmd_update    "$@" ;;
     autostart) shift; cmd_autostart "$@" ;;
     *)         usage; exit 1 ;;

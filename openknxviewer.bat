@@ -4,17 +4,19 @@ setlocal enabledelayedexpansion
 set SCRIPT_DIR=%~dp0
 set VENV_DIR=%SCRIPT_DIR%.venv
 set LOG_DIR=%SCRIPT_DIR%logs
+set CFG=%SCRIPT_DIR%config.json
 set PID_FILE=%SCRIPT_DIR%.server.pid
 set PID_FILE_PUBLIC=%SCRIPT_DIR%.server-public.pid
 
 if "%1"=="" goto usage
-if "%1"=="setup"   goto setup
-if "%1"=="start"   goto start
-if "%1"=="stop"    goto stop
-if "%1"=="status"  goto status
-if "%1"=="logs"    goto logs
-if "%1"=="gateway" goto gateway
-if "%1"=="update"  goto update
+if "%1"=="setup"     goto setup
+if "%1"=="start"     goto start
+if "%1"=="stop"      goto stop
+if "%1"=="status"    goto status
+if "%1"=="logs"      goto logs
+if "%1"=="gateway"   goto gateway
+if "%1"=="update"    goto update
+if "%1"=="autostart" goto autostart_note
 goto usage
 
 :: ── setup ────────────────────────────────────────────────────────────────────
@@ -41,29 +43,63 @@ if not exist "%VENV_DIR%\Scripts\uvicorn.exe" (
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 
 set PUBLIC=0
-if "%2"=="--public" set PUBLIC=1
+set PORT_OVERRIDE=
+set _ARG=%2
+if "!_ARG!"=="--public" set PUBLIC=1
+if "!_ARG!"=="--port" set PORT_OVERRIDE=%3
 
+:: Determine config key and defaults
 if %PUBLIC%==1 (
-    powershell -NoProfile -Command ^
-        "$p = Start-Process -FilePath '%VENV_DIR%\Scripts\uvicorn.exe' ^
-        -ArgumentList 'server_public:app','--host','0.0.0.0','--port','8004' ^
-        -WorkingDirectory '%SCRIPT_DIR%' ^
-        -RedirectStandardOutput '%LOG_DIR%\stdout-public.log' ^
-        -RedirectStandardError '%LOG_DIR%\stderr-public.log' ^
-        -WindowStyle Hidden -PassThru; ^
-        $p.Id | Out-File -Encoding ascii '%PID_FILE_PUBLIC%'"
-    echo Oeffentlicher Server gestartet (Port 8004)
+    set CFG_KEY=server_port_public
+    set DEFAULT_PORT=8004
+    set SERVER=server_public:app
+    set STDOUT=%LOG_DIR%\stdout-public.log
+    set STDERR=%LOG_DIR%\stderr-public.log
+    set PF=%PID_FILE_PUBLIC%
+    set LABEL=Oeffentlicher Server
 ) else (
-    powershell -NoProfile -Command ^
-        "$p = Start-Process -FilePath '%VENV_DIR%\Scripts\uvicorn.exe' ^
-        -ArgumentList 'server:app','--host','0.0.0.0','--port','8002' ^
-        -WorkingDirectory '%SCRIPT_DIR%' ^
-        -RedirectStandardOutput '%LOG_DIR%\stdout.log' ^
-        -RedirectStandardError '%LOG_DIR%\stderr.log' ^
-        -WindowStyle Hidden -PassThru; ^
-        $p.Id | Out-File -Encoding ascii '%PID_FILE%'"
-    echo Privater Server gestartet (Port 8002)
+    set CFG_KEY=server_port
+    set DEFAULT_PORT=8002
+    set SERVER=server:app
+    set STDOUT=%LOG_DIR%\stdout.log
+    set STDERR=%LOG_DIR%\stderr.log
+    set PF=%PID_FILE%
+    set LABEL=Privater Server
 )
+
+:: Get or prompt for port
+if defined PORT_OVERRIDE (
+    set USE_PORT=!PORT_OVERRIDE!
+    powershell -NoProfile -Command ^
+        "$d=if(Test-Path '!CFG!'){Get-Content '!CFG!'|ConvertFrom-Json}else{[pscustomobject]@{}}; ^
+        $d|Add-Member -Force NotePropertyName '!CFG_KEY!' -NotePropertyValue [int]'!USE_PORT!'; ^
+        $d|ConvertTo-Json|Set-Content '!CFG!'"
+) else (
+    for /f "delims=" %%P in ('powershell -NoProfile -Command ^
+        "$d=if(Test-Path '!CFG!'){Get-Content '!CFG!'|ConvertFrom-Json}else{[pscustomobject]@{}}; ^
+        $v=$d.'!CFG_KEY!'; if($v){$v}else{''}") do set STORED=%%P
+    if "!STORED!"=="" (
+        set /p USE_PORT=!LABEL! Port [!DEFAULT_PORT!]:
+        if "!USE_PORT!"=="" set USE_PORT=!DEFAULT_PORT!
+        powershell -NoProfile -Command ^
+            "$d=if(Test-Path '!CFG!'){Get-Content '!CFG!'|ConvertFrom-Json}else{[pscustomobject]@{}}; ^
+            $d|Add-Member -Force NotePropertyName '!CFG_KEY!' -NotePropertyValue [int]'!USE_PORT!'; ^
+            $d|ConvertTo-Json|Set-Content '!CFG!'"
+        echo   Port !USE_PORT! in config.json gespeichert.
+    ) else (
+        set USE_PORT=!STORED!
+    )
+)
+
+powershell -NoProfile -Command ^
+    "$p = Start-Process -FilePath '!VENV_DIR!\Scripts\uvicorn.exe' ^
+    -ArgumentList '!SERVER!','--host','0.0.0.0','--port','!USE_PORT!' ^
+    -WorkingDirectory '!SCRIPT_DIR!' ^
+    -RedirectStandardOutput '!STDOUT!' ^
+    -RedirectStandardError '!STDERR!' ^
+    -WindowStyle Hidden -PassThru; ^
+    $p.Id | Out-File -Encoding ascii '!PF!'"
+echo !LABEL! gestartet (Port !USE_PORT!)
 goto end
 
 :: ── stop ─────────────────────────────────────────────────────────────────────
@@ -89,34 +125,42 @@ set _LBL=%~2
 if exist "%_PF%" (
     set /p _PID=<"%_PF%"
     taskkill /PID !_PID! /F >nul 2>&1
-    if errorlevel 1 (echo %_LBL% war nicht aktiv.) else (echo %_LBL% gestoppt (PID !_PID!).)
+    if errorlevel 1 (echo !_LBL! war nicht aktiv.) else (echo !_LBL! gestoppt (PID !_PID!).)
     del "%_PF%"
 ) else (
-    echo Kein PID-File fuer %_LBL% gefunden.
+    echo Kein PID-File fuer !_LBL! gefunden.
 )
 goto :eof
 
 :: ── status ───────────────────────────────────────────────────────────────────
 :status
-call :status_one "%PID_FILE%"        "Privater Server"     8002
-call :status_one "%PID_FILE_PUBLIC%" "Oeffentlicher Server" 8004
+for /f "delims=" %%P in ('powershell -NoProfile -Command ^
+    "$d=if(Test-Path '%CFG%'){Get-Content '%CFG%'|ConvertFrom-Json}else{[pscustomobject]@{}}; ^
+    if($d.server_port){$d.server_port}else{8002}") do set PORT_PRIV=%%P
+for /f "delims=" %%P in ('powershell -NoProfile -Command ^
+    "$d=if(Test-Path '%CFG%'){Get-Content '%CFG%'|ConvertFrom-Json}else{[pscustomobject]@{}}; ^
+    if($d.server_port_public){$d.server_port_public}else{8004}") do set PORT_PUB=%%P
+
+call :status_one "%PID_FILE%"        "Privater Server"     !PORT_PRIV! private
+call :status_one "%PID_FILE_PUBLIC%" "Oeffentlicher Server" !PORT_PUB!  public
 goto end
 
 :status_one
 set _PF=%~1
 set _LBL=%~2
 set _PORT=%~3
+set _TYPE=%~4
 if exist "%_PF%" (
     set /p _PID=<"%_PF%"
     tasklist /FI "PID eq !_PID!" 2>nul | find "!_PID!" >nul
     if errorlevel 1 (
-        echo !_LBL!: gestoppt (veraltetes PID-File)
+        echo !_LBL!: gestoppt (veraltetes PID-File^)
         del "%_PF%"
     ) else (
         echo !_LBL!: laeuft (PID !_PID!, Port !_PORT!)
-        if "!_PORT!"=="8002" (
+        if "!_TYPE!"=="private" (
             powershell -NoProfile -Command ^
-                "try { $d=(Invoke-RestMethod http://localhost:8002/api/gateway); ^
+                "try { $d=(Invoke-RestMethod http://localhost:!_PORT!/api/gateway); ^
                 $ok=if($d.connected){'verbunden'}else{'nicht verbunden'}; ^
                 Write-Host ('  Gateway: '+$d.ip+':'+$d.port+' - '+$ok+' ['+$d.language+']') } catch {}"
         )
@@ -151,7 +195,6 @@ goto end
 set GW_IP=
 set GW_PORT=
 set GW_LANG=
-set _i=2
 :gw_parse
 if "%~2"=="" goto gw_action
 if "%~2"=="--ip"       ( set GW_IP=%~3       & shift & shift & goto gw_parse )
@@ -161,23 +204,25 @@ shift & goto gw_parse
 
 :gw_action
 if "%GW_IP%%GW_PORT%%GW_LANG%"=="" (
-    if exist "%SCRIPT_DIR%config.json" (
+    if exist "%CFG%" (
         powershell -NoProfile -Command ^
-            "$d=Get-Content '%SCRIPT_DIR%config.json'|ConvertFrom-Json; ^
-            Write-Host ('IP:       '+$d.gateway_ip); ^
-            Write-Host ('Port:     '+$d.gateway_port); ^
-            Write-Host ('Sprache:  '+$d.language)"
+            "$d=Get-Content '%CFG%'|ConvertFrom-Json; ^
+            Write-Host ('Gateway-IP:   '  +$d.gateway_ip); ^
+            Write-Host ('Gateway-Port: '  +$d.gateway_port); ^
+            Write-Host ('Sprache:      '  +$d.language); ^
+            Write-Host ('Server-Port:  '  +$(if($d.server_port){$d.server_port}else{8002})); ^
+            Write-Host ('Public-Port:  '  +$(if($d.server_port_public){$d.server_port_public}else{8004}))"
     ) else (
         echo config.json nicht gefunden.
     )
     goto end
 )
 powershell -NoProfile -Command ^
-    "$d=if(Test-Path '%SCRIPT_DIR%config.json'){Get-Content '%SCRIPT_DIR%config.json'|ConvertFrom-Json}else{[pscustomobject]@{gateway_ip='';gateway_port=3671;language='de-DE'}}; ^
+    "$d=if(Test-Path '%CFG%'){Get-Content '%CFG%'|ConvertFrom-Json}else{[pscustomobject]@{gateway_ip='';gateway_port=3671;language='de-DE'}}; ^
     if('%GW_IP%'){$d.gateway_ip='%GW_IP%'}; ^
     if('%GW_PORT%'){$d.gateway_port=[int]'%GW_PORT%'}; ^
     if('%GW_LANG%'){$d.language='%GW_LANG%'}; ^
-    $d|ConvertTo-Json|Set-Content '%SCRIPT_DIR%config.json'; ^
+    $d|ConvertTo-Json|Set-Content '%CFG%'; ^
     Write-Host ('Gateway gespeichert: '+$d.gateway_ip+':'+$d.gateway_port+', Sprache: '+$d.language)"
 goto end
 
@@ -195,18 +240,24 @@ echo Installierte Versionen:
 "%VENV_DIR%\Scripts\pip" show xknxproject xknx fastapi uvicorn 2>nul | findstr /R "^Name ^Version"
 goto end
 
+:: ── autostart ────────────────────────────────────────────────────────────────
+:autostart_note
+echo Autostart wird nur unter macOS unterstuetzt (LaunchAgent^).
+echo Unter Windows bitte den Task Scheduler verwenden.
+goto end
+
 :: ── usage ────────────────────────────────────────────────────────────────────
 :usage
 echo Verwendung: openknxviewer ^<Befehl^> [Optionen]
 echo.
-echo   setup                                    Umgebung erstellen ^& Pakete installieren
-echo   start  [--public]                        Server starten (Standard: Port 8002)
-echo   stop   [--public ^| --all]               Server stoppen
-echo   status                                   Server- und Gateway-Status anzeigen
-echo   logs   [--lines N] [--follow]            Bus-Log anzeigen
-echo   gateway                                  Gateway-Konfiguration anzeigen
-echo   gateway --ip X [--port Y] [--language L] Gateway konfigurieren
-echo   update                                   Alle Pakete aktualisieren
+echo   setup                                         Umgebung erstellen ^& Pakete installieren
+echo   start  [--public] [--port N]                  Server starten (fragt Port beim ersten Mal^)
+echo   stop   [--public ^| --all]                    Server stoppen
+echo   status                                        Server- und Gateway-Status anzeigen
+echo   logs   [--lines N] [--follow]                 Bus-Log anzeigen
+echo   gateway                                       Konfiguration anzeigen
+echo   gateway --ip X [--port Y] [--language L]      KNX-Gateway konfigurieren
+echo   update                                        Alle Pakete aktualisieren
 
 :end
 endlocal

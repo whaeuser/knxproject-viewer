@@ -85,6 +85,8 @@ Beide Server können gleichzeitig laufen.
 
 ### Windows
 
+> **Hinweis:** Die Windows-Version (`openknxviewer.bat`) wurde bisher nicht getestet.
+
 ```bat
 openknxviewer setup
 openknxviewer start

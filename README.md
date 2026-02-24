@@ -30,7 +30,7 @@ Web-UI zum Hochladen, Analysieren und Dokumentieren von `.knxproj`-Dateien – m
 - **DPT-aware Dekodierung**: Werte mit Einheit (`21.34 °C`, `75 %`, `Ein/Aus`) wenn Projektdatei geladen
 - Tooltip auf dem Wert zeigt DPT-Typ und Rohwert, z.B. `DPT: 9.001 | Raw: DPTArray((0x0c, 0x1a))`
 - **Letzter Wert** pro Gruppenadresse in der GA-Tabelle
-- Persistentes Log mit täglicher Rotation (`logs/knx_bus.log`, 30 Tage)
+- Persistentes Log mit täglicher Rotation (`logs/knx_bus.log`, 30 Tage), CSV-Export
 - **Bus-only-Modus**: Geräte und GAs aus Bus-Telegrammen ableiten ohne Projektdatei
 - Inline-Editierung von Namen und Beschreibungen → gespeichert in `annotations.json`
 - Verbindungsindikator + Gateway-Konfiguration (IP, Port, Sprache) im Browser
@@ -38,21 +38,47 @@ Web-UI zum Hochladen, Analysieren und Dokumentieren von `.knxproj`-Dateien – m
 
 ---
 
-## Setup & Start
+## Setup & Verwendung
 
-### macOS / Linux
+Voraussetzung: Python 3.11+
 
 ```bash
-# Einmalig einrichten (.venv erstellen, Abhängigkeiten installieren)
-./setup.sh
+# Einmalig: virtuelle Umgebung erstellen und Pakete installieren
+./openknxviewer setup
 
 # Privater Server starten — Bus-Monitor, Port 8002
-./run.sh
+./openknxviewer start
 # → http://localhost:8002
 
 # Öffentlicher Server starten — nur Projektbetrachter, Port 8004
-./run_public.sh
+./openknxviewer start --public
 # → http://localhost:8004
+
+# Server stoppen
+./openknxviewer stop
+./openknxviewer stop --public
+./openknxviewer stop --all
+
+# Status anzeigen (Server + Gateway-Verbindung)
+./openknxviewer status
+
+# Bus-Log anzeigen
+./openknxviewer logs
+./openknxviewer logs --lines 100
+./openknxviewer logs --follow
+
+# Gateway-Konfiguration anzeigen / setzen
+./openknxviewer gateway
+./openknxviewer gateway --ip 192.168.1.70 --port 3671 --language de-DE
+
+# Alle Pakete aktualisieren
+./openknxviewer update
+
+# Autostart bei Login einrichten (macOS)
+./openknxviewer autostart
+./openknxviewer autostart --public
+./openknxviewer autostart --remove
+./openknxviewer autostart --remove --public
 ```
 
 Beide Server können gleichzeitig laufen.
@@ -60,58 +86,17 @@ Beide Server können gleichzeitig laufen.
 ### Windows
 
 ```bat
-:: Einmalig einrichten (.venv erstellen, Abhängigkeiten installieren)
-setup.bat
-
-:: Privater Server starten — Bus-Monitor, Port 8002
-run.bat
-:: → http://localhost:8002
+openknxviewer setup
+openknxviewer start
+openknxviewer start --public
+openknxviewer stop
+openknxviewer status
+openknxviewer logs --lines 100
+openknxviewer gateway --ip 192.168.1.70
+openknxviewer update
 ```
 
-Voraussetzung: Python 3.11+ im PATH.
-
----
-
-## Autostart (macOS)
-
-```bash
-./install-autostart.sh          # privater Server auf Port 8002
-./install-autostart-public.sh   # öffentlicher Server auf Port 8004
-./uninstall-autostart.sh
-./uninstall-autostart-public.sh
-```
-
-Startet bei jedem Login automatisch. Logs: `logs/stdout.log`, `logs/stderr.log`.
-
----
-
-## Dateien
-
-```
-knxproject-viewer/
-├── server.py                    # Privater Server (Port 8002): Bus-Monitor, WebSocket, KNX
-├── server_public.py             # Öffentlicher Server (Port 8004): nur Projektbetrachter
-├── index.html                   # Single-Page-Frontend (von beiden Servern geteilt)
-├── requirements.txt             # Python-Abhängigkeiten
-├── setup.sh                     # Erstellt .venv und installiert alles (macOS/Linux)
-├── run.sh                       # Startet privaten Server (macOS/Linux)
-├── run_public.sh                # Startet öffentlichen Server (macOS/Linux)
-├── setup.bat                    # Erstellt .venv und installiert alles (Windows)
-├── run.bat                      # Startet privaten Server (Windows)
-├── install-autostart.sh         # macOS LaunchAgent für privaten Server
-├── install-autostart-public.sh  # macOS LaunchAgent für öffentlichen Server
-├── uninstall-autostart.sh
-├── uninstall-autostart-public.sh
-├── config.json                  # Gateway-IP, Port, Sprache, letzter Dateiname (automatisch)
-├── annotations.json             # Inline-Annotationen (automatisch erstellt)
-├── last_project.json            # Letztes geparste Projekt als JSON (automatisch erstellt)
-└── logs/
-    ├── knx_bus.log              # KNX-Telegrammlog (rotierend, 30 Tage)
-    ├── stdout.log               # Server-Stdout (Autostart privat)
-    ├── stderr.log               # Server-Stderr (Autostart privat)
-    ├── stdout-public.log        # Server-Stdout (Autostart öffentlich)
-    └── stderr-public.log        # Server-Stderr (Autostart öffentlich)
-```
+> Autostart unter Windows: Aufgabenplanung (Task Scheduler) manuell einrichten.
 
 ---
 
@@ -138,6 +123,30 @@ Im ⚙-Button oben rechts (nur privater Server):
 - Sprache für `.knxproj`-Parsing (`de-DE` Standard, `en-US` möglich)
 
 Gespeichert in `config.json`, automatisch beim Serverstart geladen.
+Alternativ per CLI: `./openknxviewer gateway --ip X.X.X.X`
+
+---
+
+## Dateien
+
+```
+knxproject-viewer/
+├── server.py                    # Privater Server (Port 8002): Bus-Monitor, WebSocket, KNX
+├── server_public.py             # Öffentlicher Server (Port 8004): nur Projektbetrachter
+├── index.html                   # Single-Page-Frontend (von beiden Servern geteilt)
+├── requirements.txt             # Python-Abhängigkeiten
+├── openknxviewer                # CLI-Tool (macOS/Linux)
+├── openknxviewer.bat            # CLI-Tool (Windows)
+├── config.json                  # Gateway-IP, Port, Sprache (automatisch)
+├── annotations.json             # Inline-Annotationen (automatisch erstellt)
+├── last_project.json            # Letztes geparste Projekt als JSON (automatisch erstellt)
+└── logs/
+    ├── knx_bus.log              # KNX-Telegrammlog (rotierend, 30 Tage)
+    ├── stdout.log               # Server-Stdout
+    ├── stderr.log               # Server-Stderr
+    ├── stdout-public.log        # Server-Stdout (öffentlich)
+    └── stderr-public.log        # Server-Stderr (öffentlich)
+```
 
 ---
 

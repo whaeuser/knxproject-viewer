@@ -209,6 +209,71 @@ print(f"Gateway gespeichert: {d.get('gateway_ip')}:{d.get('gateway_port')}, Spra
 EOF
 }
 
+# ── autostart (macOS LaunchAgent) ─────────────────────────────────────────────
+cmd_autostart() {
+    if [[ "$(uname)" != "Darwin" ]]; then
+        echo "Autostart wird nur unter macOS unterstützt."
+        exit 1
+    fi
+    local public=false remove=false
+    for arg in "$@"; do
+        [[ "$arg" == "--public" ]] && public=true
+        [[ "$arg" == "--remove" ]] && remove=true
+    done
+
+    local label port server stdout stderr
+    if $public; then
+        label="com.knxproject-viewer-public"
+        port=8004; server="server_public:app"
+        stdout="stdout-public.log"; stderr="stderr-public.log"
+    else
+        label="com.knxproject-viewer"
+        port=8002; server="server:app"
+        stdout="stdout.log"; stderr="stderr.log"
+    fi
+    local plist="$HOME/Library/LaunchAgents/${label}.plist"
+
+    if $remove; then
+        if [[ -f "$plist" ]]; then
+            launchctl unload -w "$plist" 2>/dev/null || true
+            rm "$plist"
+            echo "Autostart entfernt: $plist"
+        else
+            echo "Kein Autostart gefunden: $plist"
+        fi
+        return
+    fi
+
+    _check_venv
+    mkdir -p "$LOG_DIR"
+    cat >"$plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>             <string>${label}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${VENV_DIR}/bin/uvicorn</string>
+        <string>${server}</string>
+        <string>--host</string>  <string>0.0.0.0</string>
+        <string>--port</string>  <string>${port}</string>
+    </array>
+    <key>RunAtLoad</key>         <true/>
+    <key>KeepAlive</key>         <true/>
+    <key>WorkingDirectory</key>  <string>${SCRIPT_DIR}</string>
+    <key>StandardOutPath</key>   <string>${LOG_DIR}/${stdout}</string>
+    <key>StandardErrorPath</key> <string>${LOG_DIR}/${stderr}</string>
+</dict>
+</plist>
+EOF
+    launchctl unload "$plist" 2>/dev/null || true
+    launchctl load -w "$plist"
+    echo "Autostart installiert: $plist"
+    echo "Server startet bei jedem Login auf Port $port."
+    echo "Logs: $LOG_DIR/"
+}
+
 # ── update ────────────────────────────────────────────────────────────────────
 cmd_update() {
     _check_venv
@@ -234,6 +299,8 @@ usage() {
     echo "  gateway                                Gateway-Konfiguration anzeigen"
     echo "  gateway --ip X [--port Y] [--language L]  Gateway konfigurieren"
     echo "  update                                 Alle Pakete aktualisieren"
+    echo "  autostart          [--public]          macOS LaunchAgent installieren"
+    echo "  autostart --remove [--public]          macOS LaunchAgent entfernen"
 }
 
 # ── dispatch ──────────────────────────────────────────────────────────────────
@@ -244,6 +311,7 @@ case "${1:-}" in
     status)  shift; cmd_status  "$@" ;;
     logs)    shift; cmd_logs    "$@" ;;
     gateway) shift; cmd_gateway "$@" ;;
-    update)  shift; cmd_update  "$@" ;;
-    *)       usage; exit 1 ;;
+    update)    shift; cmd_update    "$@" ;;
+    autostart) shift; cmd_autostart "$@" ;;
+    *)         usage; exit 1 ;;
 esac

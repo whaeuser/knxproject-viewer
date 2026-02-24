@@ -4,37 +4,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-**Setup** (creates `.venv/`, installs all dependencies including `xknxproject` from `../xknxproject/`):
-```bash
-./setup.sh
-```
+All operations are handled via the unified CLI `openknxviewer` (bash) / `openknxviewer.bat` (Windows):
 
-**Run — private server** (with bus monitor, port 8002):
 ```bash
-./run.sh
-# or directly:
-.venv/bin/uvicorn server:app --host 0.0.0.0 --port 8002
-```
-
-**Run — public server** (no bus monitor, safe for internet, port 8004):
-```bash
-./run_public.sh
-# or directly:
-.venv/bin/uvicorn server_public:app --host 0.0.0.0 --port 8004
+./openknxviewer setup                        # create .venv, install dependencies
+./openknxviewer start                        # private server, port 8002
+./openknxviewer start --public               # public server, port 8004
+./openknxviewer stop [--public|--all]        # stop server(s)
+./openknxviewer status                       # show server + gateway status
+./openknxviewer logs [--lines N] [--follow]  # show bus log
+./openknxviewer gateway [--ip X --port Y]    # show/set gateway config
+./openknxviewer update                       # upgrade all packages
+./openknxviewer autostart [--public]         # install macOS LaunchAgent
+./openknxviewer autostart --remove [--public]# remove macOS LaunchAgent
 ```
 
 Both servers can run simultaneously and share the same `index.html`. The frontend fetches `/api/mode` on startup to activate or deactivate bus features.
 
 > **Important:** Do not use `--reload` — it spawns multiple worker processes that each try to open a KNX tunnel, competing for the single tunnel slot on the gateway and causing connection failures.
 
-**Autostart** (macOS LaunchAgent — starts server on every login):
-```bash
-./install-autostart.sh          # private server on port 8002
-./install-autostart-public.sh   # public server on port 8004
-./uninstall-autostart.sh        # remove private autostart
-./uninstall-autostart-public.sh # remove public autostart
-```
-Both LaunchAgents call uvicorn directly (no `--reload`) on their respective ports.
 Logs are written to `logs/stdout.log`, `logs/stderr.log`, and `logs/knx_bus.log`.
 
 There are no test or lint commands configured.

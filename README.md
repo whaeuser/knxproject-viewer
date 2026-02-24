@@ -1,5 +1,9 @@
 # KNX Project Viewer
 
+> **Vibe Coded** — dieses Projekt wurde vollständig mit [Claude Code](https://claude.ai/code) erstellt.
+>
+> **Demo:** [knxviewer.nurdaheim.net](https://knxviewer.nurdaheim.net/)
+
 Web-UI zum Hochladen, Analysieren und Dokumentieren von `.knxproj`-Dateien – mit optionalem Live-Bus-Monitor für KNX/IP-Gateways.
 
 **Stack:** FastAPI · Alpine.js · Tailwind CSS · xknxproject · xknx
@@ -64,7 +68,7 @@ run.bat
 :: → http://localhost:8002
 ```
 
-Voraussetzung: Python 3.11+ im PATH. `xknxproject` muss als Schwester-Verzeichnis `../xknxproject/` vorhanden sein.
+Voraussetzung: Python 3.11+ im PATH.
 
 ---
 
@@ -143,17 +147,35 @@ Gespeichert in `config.json`, automatisch beim Serverstart geladen.
 fastapi
 uvicorn[standard]
 python-multipart
-xknx
 websockets
-xknxproject  # aus ../xknxproject/ (editable install)
+xknx
+xknxproject
 ```
 
 ---
 
-## Testdateien
+## Lizenz
 
-`.knxproj`-Beispieldateien im Nachbar-Repo:
+Dieses Projekt steht unter der **GNU General Public License v2** (GPL v2),
+bedingt durch die Abhängigkeit von [xknxproject](https://github.com/XKNX/xknxproject) (GPL v2).
 
-```
-../xknxproject/test/resources/*.knxproj
-```
+Das bedeutet: Jeder darf den Code frei verwenden, verändern und weitergeben —
+vorausgesetzt, abgeleitete Werke werden ebenfalls unter GPL v2 veröffentlicht.
+
+Siehe [LICENSE](LICENSE).
+
+---
+
+## Danke
+
+Dieses Projekt wäre ohne folgende großartige Open-Source-Bibliotheken nicht möglich:
+
+| Bibliothek | Beschreibung | Lizenz |
+|---|---|---|
+| [xknxproject](https://github.com/XKNX/xknxproject) | Parst `.knxproj`-Dateien | GPL v2 |
+| [xknx](https://github.com/XKNX/xknx) | KNX/IP-Kommunikation und DPT-Dekodierung | MIT |
+| [FastAPI](https://fastapi.tiangolo.com) | Modernes Python-Web-Framework | MIT |
+| [Alpine.js](https://alpinejs.dev) | Leichtgewichtiges JavaScript-Framework | MIT |
+| [Tailwind CSS](https://tailwindcss.com) | Utility-first CSS-Framework | MIT |
+
+Herzlichen Dank an alle Maintainer und Contributors dieser Projekte!

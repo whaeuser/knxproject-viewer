@@ -1,4 +1,6 @@
 import asyncio
+import csv
+import io
 import json
 import logging
 import os
@@ -11,7 +13,7 @@ from pathlib import Path
 from typing import Set
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from xknx import XKNX
 from xknx.io import ConnectionConfig, ConnectionType
@@ -343,6 +345,38 @@ def get_log(lines: int = 500):
         return entries
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.get("/api/log/export.csv")
+def export_log_csv():
+    """Export complete log (all rotated files) as CSV download."""
+    log_files = sorted(LOG_PATH.parent.glob("knx_bus.log*"))
+    if not log_files:
+        raise HTTPException(status_code=404, detail="No log files found")
+
+    def generate():
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["Zeitstempel", "Quell-PA", "Gerät", "GA", "GA-Name", "Wert"])
+        yield buf.getvalue()
+        for log_file in log_files:
+            try:
+                with open(log_file, encoding="utf-8") as f:
+                    for line in f:
+                        parts = line.strip().split(" | ")
+                        if len(parts) == 6:
+                            buf = io.StringIO()
+                            csv.writer(buf).writerow(parts)
+                            yield buf.getvalue()
+            except Exception:
+                continue
+
+    filename = f"knx_bus_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    return StreamingResponse(
+        generate(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.websocket("/ws")

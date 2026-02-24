@@ -588,6 +588,8 @@
                 x-text="liveLogPaused ? '▶ Fortsetzen' : '⏸ Pausieren'"></button>
         <button @click="liveLog = []"
                 class="bg-white border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 transition-colors">🗑 Leeren</button>
+        <a href="/api/log/export.csv"
+           class="bg-white border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 transition-colors">↓ CSV</a>
         <span class="text-gray-400 text-sm ml-auto" x-text="filteredLiveLog.length + ' / ' + liveLog.length + ' Einträge'"></span>
         <span class="flex items-center gap-1.5 text-sm">
           <span class="w-2 h-2 rounded-full flex-shrink-0"

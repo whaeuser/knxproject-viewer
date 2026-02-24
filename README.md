@@ -1,10 +1,12 @@
 # KNX Project Viewer
 
-> **Vibe Coded** — dieses Projekt wurde vollständig mit [Claude Code](https://claude.ai/code) erstellt.
+[🇩🇪 Deutsch](README.de.md) | 🇬🇧 English
+
+> **Vibe Coded** — this project was built entirely with [Claude Code](https://claude.ai/code).
 >
 > **Demo:** [knxviewer.nurdaheim.net](https://knxviewer.nurdaheim.net/)
 
-Web-UI zum Hochladen, Analysieren und Dokumentieren von `.knxproj`-Dateien – mit optionalem Live-Bus-Monitor für KNX/IP-Gateways.
+Web UI for uploading, analysing and documenting `.knxproj` files – with an optional live bus monitor for KNX/IP gateways.
 
 **Stack:** FastAPI · Alpine.js · Tailwind CSS · xknxproject · xknx
 
@@ -12,80 +14,80 @@ Web-UI zum Hochladen, Analysieren und Dokumentieren von `.knxproj`-Dateien – m
 
 ## Features
 
-### Projektbetrachter (beide Modi)
-- `.knxproj`-Datei hochladen (drag & drop oder Dateiauswahl), optional mit Passwort
-- **Info** – Projektmetadaten
-- **Geräte** – durchsuchbare Tabelle; aufklappbare KO-Liste pro Gerät
-- **Gruppenadressen** – durchsuchbar; DPT, Beschreibung, verknüpfte KOs
-- **Topologie** – Bereich → Linie → Geräte (aufklappbar)
-- **Standorte** – Gebäude → Stockwerk → Raum → Funktionen (aufklappbar)
-- **Kommunikationsobjekte** – alle KOs aller Geräte, durchsuchbar, nach Gerät gruppiert
-- **Funktionen** – nur sichtbar wenn Projekt Funktionen enthält
-- Cross-Tab-Navigation: KO → GA, GA → KO, Gerät → KOs
-- DPT- und Flags-Tooltips (100+ Typen)
-- Export als Markdown oder PDF
+### Project Viewer (both modes)
+- Upload `.knxproj` file (drag & drop or file picker), optional password support
+- **Info** – project metadata
+- **Devices** – searchable table; expandable communication object list per device
+- **Group Addresses** – searchable; DPT, description, linked COs
+- **Topology** – area → line → devices (collapsible)
+- **Locations** – building → floor → room → functions (collapsible)
+- **Communication Objects** – all COs of all devices, searchable, grouped by device
+- **Functions** – only shown when the project contains at least one function
+- Cross-tab navigation: CO → GA, GA → CO, device → COs
+- DPT and flags tooltips (100+ types)
+- Export as Markdown or PDF
 
-### Live Bus-Monitor (nur privater Server, Port 8002)
-- Echtzeit-Telegramme via WebSocket
-- **DPT-aware Dekodierung**: Werte mit Einheit (`21.34 °C`, `75 %`, `Ein/Aus`) wenn Projektdatei geladen
-- Tooltip auf dem Wert zeigt DPT-Typ und Rohwert, z.B. `DPT: 9.001 | Raw: DPTArray((0x0c, 0x1a))`
-- **Letzter Wert** pro Gruppenadresse in der GA-Tabelle
-- Persistentes Log mit täglicher Rotation (`logs/knx_bus.log`, 30 Tage), CSV-Export
-- **Bus-only-Modus**: Geräte und GAs aus Bus-Telegrammen ableiten ohne Projektdatei
-- Inline-Editierung von Namen und Beschreibungen → gespeichert in `annotations.json`
-- Verbindungsindikator + Gateway-Konfiguration (IP, Port, Sprache) im Browser
-- **Letzte Projektdatei** wird nach dem Parsen gespeichert und beim nächsten Start automatisch vorgeschlagen
+### Live Bus Monitor (private server only, port 8002)
+- Real-time telegrams via WebSocket
+- **DPT-aware decoding**: values with unit (`21.34 °C`, `75 %`, `On/Off`) when a project file is loaded
+- Value cell tooltip shows DPT type and raw value, e.g. `DPT: 9.001 | Raw: DPTArray((0x0c, 0x1a))`
+- **Last value** per group address shown in the GA table
+- Persistent log with daily rotation (`logs/knx_bus.log`, 30 days), CSV export
+- **Bus-only mode**: derive devices and GAs from bus telegrams without a project file
+- Inline editing of names and descriptions → saved to `annotations.json`
+- Connection indicator + gateway configuration (IP, port, language) in the browser
+- **Last project file** is saved after parsing and automatically suggested on next start
 
 ---
 
-## Setup & Verwendung
+## Setup & Usage
 
-Voraussetzung: Python 3.10+ muss auf dem System installiert sein (alle weiteren Pakete landen im isolierten `.venv/`).
+Requirement: Python 3.10+ must be installed on the system (all packages are installed into an isolated `.venv/`).
 
 ```bash
-# Einmalig: virtuelle Umgebung erstellen und Pakete installieren
+# One-time: create virtual environment and install packages
 ./openknxviewer setup
 
-# Privater Server starten — Bus-Monitor, Port 8002
+# Start private server — bus monitor, port 8002
 ./openknxviewer start
 # → http://localhost:8002
 
-# Öffentlicher Server starten — nur Projektbetrachter, Port 8004
+# Start public server — project viewer only, port 8004
 ./openknxviewer start --public
 # → http://localhost:8004
 
-# Server stoppen
+# Stop server(s)
 ./openknxviewer stop
 ./openknxviewer stop --public
 ./openknxviewer stop --all
 
-# Status anzeigen (Server + Gateway-Verbindung)
+# Show status (server + gateway connection)
 ./openknxviewer status
 
-# Bus-Log anzeigen
+# Show bus log
 ./openknxviewer logs
 ./openknxviewer logs --lines 100
 ./openknxviewer logs --follow
 
-# Gateway-Konfiguration anzeigen / setzen
+# Show / set gateway configuration
 ./openknxviewer gateway
 ./openknxviewer gateway --ip 192.168.1.70 --port 3671 --language de-DE
 
-# Alle Pakete aktualisieren
+# Update all packages
 ./openknxviewer update
 
-# Autostart bei Login einrichten (macOS)
+# Set up autostart on login (macOS)
 ./openknxviewer autostart
 ./openknxviewer autostart --public
 ./openknxviewer autostart --remove
 ./openknxviewer autostart --remove --public
 ```
 
-Beide Server können gleichzeitig laufen.
+Both servers can run simultaneously.
 
 ### Windows
 
-> **Hinweis:** Die Windows-Version (`openknxviewer.bat`) wurde bisher nicht getestet.
+> **Note:** The Windows version (`openknxviewer.bat`) has not been tested yet.
 
 ```bat
 openknxviewer setup
@@ -98,61 +100,61 @@ openknxviewer gateway --ip 192.168.1.70
 openknxviewer update
 ```
 
-> Autostart unter Windows: Aufgabenplanung (Task Scheduler) manuell einrichten.
+> Autostart on Windows: configure manually via Task Scheduler.
 
 ---
 
-## Öffentlich / Privat
+## Public / Private Mode
 
-Das Frontend erkennt automatisch den Modus über `GET /api/mode`:
+The frontend detects the mode automatically via `GET /api/mode`:
 
-| | Privat (Port 8002) | Öffentlich (Port 8004) |
+| | Private (port 8002) | Public (port 8004) |
 |---|---|---|
-| Projektbetrachter | ✓ | ✓ |
-| Bus-Monitor Tab | ✓ | — |
-| Letzter Wert (GA-Tab) | ✓ | — |
-| Gateway-Konfiguration | ✓ | — |
+| Project Viewer | ✓ | ✓ |
+| Bus Monitor tab | ✓ | — |
+| Last value (GA tab) | ✓ | — |
+| Gateway configuration | ✓ | — |
 | WebSocket | ✓ | — |
 | Annotations | ✓ | — |
-| KNX-Verbindung | ✓ | — |
+| KNX connection | ✓ | — |
 
 ---
 
-## Gateway-Konfiguration
+## Gateway Configuration
 
-Im ⚙-Button oben rechts (nur privater Server):
-- KNX/IP Gateway IP-Adresse und Port
-- Sprache für `.knxproj`-Parsing (`de-DE` Standard, `en-US` möglich)
+Via the ⚙ button in the top right (private server only):
+- KNX/IP gateway IP address and port
+- Language for `.knxproj` parsing (`de-DE` default, `en-US` available)
 
-Gespeichert in `config.json`, automatisch beim Serverstart geladen.
-Alternativ per CLI: `./openknxviewer gateway --ip X.X.X.X`
+Saved to `config.json`, loaded automatically on server start.
+Can also be set via CLI: `./openknxviewer gateway --ip X.X.X.X`
 
 ---
 
-## Dateien
+## File Structure
 
 ```
 knxproject-viewer/
-├── server.py                    # Privater Server (Port 8002): Bus-Monitor, WebSocket, KNX
-├── server_public.py             # Öffentlicher Server (Port 8004): nur Projektbetrachter
-├── index.html                   # Single-Page-Frontend (von beiden Servern geteilt)
-├── requirements.txt             # Python-Abhängigkeiten
-├── openknxviewer                # CLI-Tool (macOS/Linux)
-├── openknxviewer.bat            # CLI-Tool (Windows)
-├── config.json                  # Gateway-IP, Port, Sprache (automatisch)
-├── annotations.json             # Inline-Annotationen (automatisch erstellt)
-├── last_project.json            # Letztes geparste Projekt als JSON (automatisch erstellt)
+├── server.py                    # Private server (port 8002): bus monitor, WebSocket, KNX
+├── server_public.py             # Public server (port 8004): project viewer only
+├── index.html                   # Single-page frontend (shared by both servers)
+├── requirements.txt             # Python dependencies
+├── openknxviewer                # CLI tool (macOS/Linux)
+├── openknxviewer.bat            # CLI tool (Windows)
+├── config.json                  # Gateway IP, port, language (auto-generated)
+├── annotations.json             # Inline annotations (auto-generated)
+├── last_project.json            # Last parsed project as JSON (auto-generated)
 └── logs/
-    ├── knx_bus.log              # KNX-Telegrammlog (rotierend, 30 Tage)
-    ├── stdout.log               # Server-Stdout
-    ├── stderr.log               # Server-Stderr
-    ├── stdout-public.log        # Server-Stdout (öffentlich)
-    └── stderr-public.log        # Server-Stderr (öffentlich)
+    ├── knx_bus.log              # KNX telegram log (daily rotation, 30 days)
+    ├── stdout.log               # Server stdout
+    ├── stderr.log               # Server stderr
+    ├── stdout-public.log        # Server stdout (public)
+    └── stderr-public.log        # Server stderr (public)
 ```
 
 ---
 
-## Abhängigkeiten
+## Dependencies
 
 ```
 fastapi
@@ -165,28 +167,28 @@ xknxproject
 
 ---
 
-## Lizenz
+## License
 
-Dieses Projekt steht unter der **GNU General Public License v2** (GPL v2),
-bedingt durch die Abhängigkeit von [xknxproject](https://github.com/XKNX/xknxproject) (GPL v2).
+This project is licensed under the **GNU General Public License v2** (GPL v2),
+required by its dependency on [xknxproject](https://github.com/XKNX/xknxproject) (GPL v2).
 
-Das bedeutet: Jeder darf den Code frei verwenden, verändern und weitergeben —
-vorausgesetzt, abgeleitete Werke werden ebenfalls unter GPL v2 veröffentlicht.
+This means: anyone is free to use, modify and redistribute the code —
+provided that derivative works are also released under GPL v2.
 
-Siehe [LICENSE](LICENSE).
+See [LICENSE](LICENSE).
 
 ---
 
-## Danke
+## Acknowledgements
 
-Dieses Projekt wäre ohne folgende großartige Open-Source-Bibliotheken nicht möglich:
+This project would not be possible without these great open-source libraries:
 
-| Bibliothek | Beschreibung | Lizenz |
+| Library | Description | License |
 |---|---|---|
-| [xknxproject](https://github.com/XKNX/xknxproject) | Parst `.knxproj`-Dateien | GPL v2 |
-| [xknx](https://github.com/XKNX/xknx) | KNX/IP-Kommunikation und DPT-Dekodierung | MIT |
-| [FastAPI](https://fastapi.tiangolo.com) | Modernes Python-Web-Framework | MIT |
-| [Alpine.js](https://alpinejs.dev) | Leichtgewichtiges JavaScript-Framework | MIT |
-| [Tailwind CSS](https://tailwindcss.com) | Utility-first CSS-Framework | MIT |
+| [xknxproject](https://github.com/XKNX/xknxproject) | Parses `.knxproj` files | GPL v2 |
+| [xknx](https://github.com/XKNX/xknx) | KNX/IP communication and DPT decoding | MIT |
+| [FastAPI](https://fastapi.tiangolo.com) | Modern Python web framework | MIT |
+| [Alpine.js](https://alpinejs.dev) | Lightweight JavaScript framework | MIT |
+| [Tailwind CSS](https://tailwindcss.com) | Utility-first CSS framework | MIT |
 
-Herzlichen Dank an alle Maintainer und Contributors dieser Projekte!
+Many thanks to all maintainers and contributors of these projects!

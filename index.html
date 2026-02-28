@@ -441,8 +441,12 @@
                       </template>
                       <button @click="writeGA(ga.address)" title="Schreiben"
                               class="text-xs bg-blue-600 text-white px-2 py-0.5 rounded hover:bg-blue-700">↑</button>
-                      <button @click="readGA(ga.address)" title="Lesen"
-                              class="text-xs bg-gray-200 text-gray-700 px-2 py-0.5 rounded hover:bg-gray-300">↓</button>
+                      <button @click="gaIsReadable(ga) && readGA(ga.address)"
+                              :title="gaIsReadable(ga) ? 'Lesen (R-Flag gesetzt)' : 'Nicht lesbar (kein R-Flag)'"
+                              :class="gaIsReadable(ga)
+                                ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                                : 'bg-gray-100 text-gray-300 cursor-not-allowed'"
+                              class="text-xs px-2 py-0.5 rounded">↓</button>
                     </div>
                   </template>
                   <span x-show="!ga.dpt || !ga.dpt.main" class="text-gray-300 text-xs">—</span>
@@ -942,6 +946,12 @@ function app() {
         { label: pair[0], value: '0' },
         { label: pair[1], value: '1' },
       ];
+    },
+
+    gaIsReadable(ga) {
+      if (!this.project) return false;
+      const cos = this.project.communication_objects ?? {};
+      return (ga.communication_object_ids ?? []).some(id => cos[id]?.flags?.read === true);
     },
 
     async writeGA(ga) {

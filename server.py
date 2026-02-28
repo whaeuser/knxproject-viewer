@@ -12,11 +12,16 @@ from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from typing import Set
 
+import httpx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from xknx import XKNX
+from xknx.dpt import DPTBase
 from xknx.io import ConnectionConfig, ConnectionType
+from xknx.telegram import Telegram
+from xknx.telegram.address import GroupAddress
+from xknx.telegram.apci import GroupValueRead, GroupValueWrite
 from xknxproject import XKNXProj
 from xknxproject.exceptions import InvalidPasswordException, XknxProjectException
 
@@ -400,6 +405,160 @@ async def websocket_endpoint(ws: WebSocket):
             await ws.receive_text()
     except WebSocketDisconnect:
         state["ws_clients"].discard(ws)
+
+
+# ── GA Write / Read ───────────────────────────────────────────────────────────
+
+def _build_write_payload(dpt_info: dict, value_str: str):
+    """Encode a user-supplied string value to a GroupValueWrite payload."""
+    transcoder = DPTBase.parse_transcoder(dpt_info)
+    if transcoder is None:
+        raise ValueError(f"Unbekannter DPT: {dpt_info}")
+    main = dpt_info.get("main")
+    if main == 1:
+        value = value_str.strip().lower() in ("1", "true", "ein", "an", "on", "yes")
+    else:
+        value = float(value_str)
+    return GroupValueWrite(transcoder.to_knx(value))
+
+
+@app.post("/api/ga/write")
+async def ga_write(data: dict):
+    ga_str = data.get("ga", "")
+    value_str = str(data.get("value", ""))
+    if not state["connected"] or state["xknx"] is None:
+        raise HTTPException(status_code=503, detail="Kein KNX-Gateway verbunden")
+    dpt_info = state["ga_dpt_map"].get(ga_str)
+    if not dpt_info:
+        raise HTTPException(status_code=422, detail="DPT für diese GA nicht bekannt")
+    try:
+        payload = _build_write_payload(dpt_info, value_str)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Wert konnte nicht kodiert werden: {exc}") from exc
+    telegram = Telegram(destination_address=GroupAddress(ga_str), payload=payload)
+    await state["xknx"].telegrams.put(telegram)
+    return {"ok": True}
+
+
+@app.post("/api/ga/read")
+async def ga_read(data: dict):
+    ga_str = data.get("ga", "")
+    if not state["connected"] or state["xknx"] is None:
+        raise HTTPException(status_code=503, detail="Kein KNX-Gateway verbunden")
+    telegram = Telegram(destination_address=GroupAddress(ga_str), payload=GroupValueRead())
+    await state["xknx"].telegrams.put(telegram)
+    return {"ok": True}
+
+
+# ── LLM config & analysis ─────────────────────────────────────────────────────
+
+LLM_DEFAULT_MODEL = "z-ai/glm-5"
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+
+def _build_project_summary(project_data: dict) -> str:
+    """Build a compact text summary of a KNX project for LLM context."""
+    lines = []
+    info = project_data.get("info", {})
+    lines.append(f"KNX-Projekt: {info.get('name', 'Unbekannt')}")
+    lines.append(f"ETS-Version: {info.get('tool_version', '-')}")
+
+    lines.append("\n## Topologie")
+    for area_id, area in project_data.get("topology", {}).items():
+        lines.append(f"  Bereich {area_id}: {area.get('name', '')}")
+        for line_id, line in area.get("lines", {}).items():
+            devs = line.get("devices", [])
+            lines.append(f"    Linie {area_id}.{line_id}: {line.get('name', '')} ({len(devs)} Geräte)")
+
+    lines.append("\n## Geräte")
+    for addr, dev in project_data.get("devices", {}).items():
+        lines.append(f"  {addr}: {dev.get('name', '')} — {dev.get('manufacturer_name', '')} {dev.get('order_number', '')}")
+
+    lines.append("\n## Gruppenadressen")
+    for _, ga in project_data.get("group_addresses", {}).items():
+        dpt = ga.get("dpt")
+        dpt_str = f" [DPT {dpt['main']}.{str(dpt.get('sub') or 0).zfill(3)}]" if dpt and dpt.get("main") else ""
+        lines.append(f"  {ga.get('address', '')}: {ga.get('name', '')}{dpt_str}")
+
+    funcs = project_data.get("functions", {})
+    if funcs:
+        lines.append("\n## Funktionen")
+        for _, func in funcs.items():
+            gas = [v.get("address", "") for v in (func.get("group_addresses") or {}).values()]
+            lines.append(f"  {func.get('name', '')}: {', '.join(gas)}")
+
+    return "\n".join(lines)
+
+
+@app.get("/api/llm/config")
+def get_llm_config():
+    cfg = load_config()
+    key = cfg.get("openrouter_api_key", "")
+    return {
+        "configured": bool(key),
+        "model": cfg.get("llm_model", LLM_DEFAULT_MODEL),
+    }
+
+
+@app.post("/api/llm/config")
+async def set_llm_config(data: dict):
+    cfg = load_config()
+    if "api_key" in data:
+        cfg["openrouter_api_key"] = data["api_key"]
+    if "model" in data:
+        cfg["llm_model"] = data["model"] or LLM_DEFAULT_MODEL
+    save_config(cfg)
+    return {"ok": True}
+
+
+@app.post("/api/llm/analyze")
+async def llm_analyze(data: dict):
+    cfg = load_config()
+    api_key = cfg.get("openrouter_api_key", "")
+    model = cfg.get("llm_model", LLM_DEFAULT_MODEL)
+    question = data.get("question", "").strip() or "Erkläre das Projekt, seine Topologie und die wichtigsten Gruppenadressen."
+
+    if not api_key:
+        raise HTTPException(status_code=400, detail="OpenRouter API-Key nicht konfiguriert")
+    if not state["project_data"]:
+        raise HTTPException(status_code=400, detail="Kein Projekt geladen")
+
+    summary = _build_project_summary(state["project_data"])
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Du bist ein KNX-Experte. KNX ist ein offener Standard für Gebäudeautomation. "
+                "Analysiere das folgende KNX-Projekt und beantworte Fragen dazu. "
+                "Antworte auf Deutsch, präzise und strukturiert."
+            ),
+        },
+        {
+            "role": "user",
+            "content": f"Projektdaten:\n\n{summary}\n\nFrage: {question}",
+        },
+    ]
+
+    async def stream_llm():
+        async with httpx.AsyncClient(timeout=60) as client:
+            async with client.stream(
+                "POST",
+                OPENROUTER_URL,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={"model": model, "messages": messages, "stream": True},
+            ) as resp:
+                if resp.status_code != 200:
+                    body = await resp.aread()
+                    yield f"data: {json.dumps({'error': body.decode()})}\n\n"
+                    return
+                async for line in resp.aiter_lines():
+                    if line.startswith("data: "):
+                        yield line + "\n\n"
+
+    return StreamingResponse(stream_llm(), media_type="text/event-stream")
 
 
 @app.post("/api/parse")

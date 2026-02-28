@@ -416,11 +416,22 @@
                 <td x-show="!publicMode" class="px-4 py-3">
                   <template x-if="ga.dpt && ga.dpt.main">
                     <div class="flex items-center gap-1">
-                      <input :id="'write-' + ga.address"
-                             x-model="gaWriteValues[ga.address]"
-                             type="text" placeholder="Wert"
-                             @keydown.enter="writeGA(ga.address)"
-                             class="w-20 border border-gray-300 rounded px-2 py-0.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                      <!-- Dropdown for DPTs with fixed options (e.g. DPT 1) -->
+                      <template x-if="gaWriteOptions(ga)">
+                        <select x-model="gaWriteValues[ga.address]"
+                                class="border border-gray-300 rounded px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400">
+                          <template x-for="opt in gaWriteOptions(ga)" :key="opt.value">
+                            <option :value="opt.value" x-text="opt.label"></option>
+                          </template>
+                        </select>
+                      </template>
+                      <!-- Text input for continuous DPTs -->
+                      <template x-if="!gaWriteOptions(ga)">
+                        <input x-model="gaWriteValues[ga.address]"
+                               type="text" placeholder="Wert"
+                               @keydown.enter="writeGA(ga.address)"
+                               class="w-20 border border-gray-300 rounded px-2 py-0.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                      </template>
                       <button @click="writeGA(ga.address)" title="Schreiben"
                               class="text-xs bg-blue-600 text-white px-2 py-0.5 rounded hover:bg-blue-700">↑</button>
                       <button @click="readGA(ga.address)" title="Lesen"
@@ -902,6 +913,27 @@ function app() {
       } finally {
         this.loading = false;
       }
+    },
+
+    gaWriteOptions(ga) {
+      if (!ga.dpt || !ga.dpt.main) return null;
+      const main = Number(ga.dpt.main);
+      const sub  = Number(ga.dpt.sub ?? 0);
+      if (main !== 1) return null;
+      // DPT 1.x — two-state binary values
+      const labels = {
+        8:  ['Aufwärts', 'Abwärts'],   // 1.008 Up/Down
+        9:  ['Öffnen', 'Schließen'],    // 1.009 Open/Close
+        10: ['Start', 'Stop'],          // 1.010 Start/Stop
+        19: ['Inaktiv', 'Aktiv'],       // 1.019 Inactive/Active
+        21: ['Kein Reset', 'Reset'],    // 1.021 Reset
+        22: ['Kein Erkennen', 'Erkennen'], // 1.022 Acknowledge
+      };
+      const pair = labels[sub] ?? ['Aus', 'Ein'];
+      return [
+        { label: pair[0], value: '0' },
+        { label: pair[1], value: '1' },
+      ];
     },
 
     async writeGA(ga) {

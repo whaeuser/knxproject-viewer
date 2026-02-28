@@ -409,19 +409,6 @@ async def websocket_endpoint(ws: WebSocket):
 
 # ── GA Write / Read ───────────────────────────────────────────────────────────
 
-def _build_write_payload(dpt_info: dict, value_str: str):
-    """Encode a user-supplied string value to a GroupValueWrite payload."""
-    transcoder = DPTBase.parse_transcoder(dpt_info)
-    if transcoder is None:
-        raise ValueError(f"Unbekannter DPT: {dpt_info}")
-    main = dpt_info.get("main")
-    if main == 1:
-        value = value_str.strip().lower() in ("1", "true", "ein", "an", "on", "yes")
-    else:
-        value = float(value_str)
-    return GroupValueWrite(transcoder.to_knx(value))
-
-
 @app.post("/api/ga/write")
 async def ga_write(data: dict):
     ga_str = data.get("ga", "")
@@ -432,11 +419,50 @@ async def ga_write(data: dict):
     if not dpt_info:
         raise HTTPException(status_code=422, detail="DPT für diese GA nicht bekannt")
     try:
-        payload = _build_write_payload(dpt_info, value_str)
+        transcoder = DPTBase.parse_transcoder(dpt_info)
+        if transcoder is None:
+            raise ValueError(f"Unbekannter DPT: {dpt_info}")
+        main = dpt_info.get("main")
+        if main == 1:
+            bool_val = value_str.strip().lower() in ("1", "true", "ein", "an", "on", "yes")
+            typed_value = bool_val
+            display_value = "Ein" if bool_val else "Aus"
+        else:
+            typed_value = float(value_str)
+            unit = getattr(transcoder, "unit", "") or ""
+            display_value = f"{typed_value:.2f}{' ' + unit if unit else ''}"
+        payload = GroupValueWrite(transcoder.to_knx(typed_value))
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Wert konnte nicht kodiert werden: {exc}") from exc
+
     telegram = Telegram(destination_address=GroupAddress(ga_str), payload=payload)
     await state["xknx"].telegrams.put(telegram)
+
+    # Update local state so current_values and WebSocket clients reflect the sent value
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    ga_name = ""
+    if state["project_data"]:
+        for gad in state["project_data"].get("group_addresses", {}).values():
+            if gad.get("address") == ga_str:
+                ga_name = gad.get("name", "")
+                break
+    dpt_main = dpt_info.get("main")
+    dpt_sub = dpt_info.get("sub")
+    dpt = f"{dpt_main}.{str(dpt_sub).zfill(3)}" if dpt_main is not None and dpt_sub is not None else str(dpt_main or "")
+    entry = {
+        "type": "telegram",
+        "ts": ts,
+        "src": "0.0.0",
+        "device": "Open-KNXViewer",
+        "ga": ga_str,
+        "ga_name": ga_name,
+        "value": display_value,
+        "raw": "",
+        "dpt": dpt,
+    }
+    state["current_values"][ga_str] = {"value": display_value, "ts": ts}
+    state["telegram_buffer"].append(entry)
+    await broadcast(entry)
     return {"ok": True}
 
 

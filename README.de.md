@@ -134,7 +134,7 @@ Alternativ per CLI: `./openknxviewer gateway --ip X.X.X.X`
 ## Dateien
 
 ```
-knxproject-viewer/
+openknxviewer/
 ├── server.py                    # Privater Server (Port 8002): Bus-Monitor, WebSocket, KNX
 ├── server_public.py             # Öffentlicher Server (Port 8004): nur Projektbetrachter
 ├── index.html                   # Single-Page-Frontend (von beiden Servern geteilt)

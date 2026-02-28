@@ -281,12 +281,12 @@ cmd_autostart() {
 
     local label cfg_key default server stdout_log stderr_log
     if $public; then
-        label="com.knxproject-viewer-public"
+        label="com.openknxviewer-public"
         cfg_key="server_port_public"; default=8004
         server="server_public:app"
         stdout_log="stdout-public.log"; stderr_log="stderr-public.log"
     else
-        label="com.knxproject-viewer"
+        label="com.openknxviewer"
         cfg_key="server_port"; default=8002
         server="server:app"
         stdout_log="stdout.log"; stderr_log="stderr.log"
@@ -337,6 +337,14 @@ EOF
 }
 
 # ── update ────────────────────────────────────────────────────────────────────
+cmd_test() {
+    _check_venv
+    # Sicherstellen dass pytest + httpx installiert sind
+    "$VENV_DIR/bin/python3" -m pip install -q pytest pytest-asyncio httpx
+    echo "==> Tests werden ausgeführt …"
+    "$VENV_DIR/bin/python3" -m pytest "$SCRIPT_DIR/tests" "$@"
+}
+
 cmd_update() {
     _check_venv
     echo "==> Aktualisiere Abhängigkeiten …"
@@ -360,7 +368,8 @@ usage() {
     echo "  logs   [--lines N] [--follow]               Bus-Log anzeigen"
     echo "  gateway                                     Konfiguration anzeigen"
     echo "  gateway --ip X [--port Y] [--language L]    KNX-Gateway konfigurieren"
-    echo "  update                                      Alle Pakete aktualisieren"
+    echo "  test   [-v] [-k AUSDRUCK]                   Tests ausführen
+  update                                      Alle Pakete aktualisieren"
     echo "  autostart          [--public]               macOS LaunchAgent installieren"
     echo "  autostart --remove [--public]               macOS LaunchAgent entfernen"
 }
@@ -373,6 +382,7 @@ case "${1:-}" in
     status)    shift; cmd_status    "$@" ;;
     logs)      shift; cmd_logs      "$@" ;;
     gateway)   shift; cmd_gateway   "$@" ;;
+    test)      shift; cmd_test      "$@" ;;
     update)    shift; cmd_update    "$@" ;;
     autostart) shift; cmd_autostart "$@" ;;
     *)         usage; exit 1 ;;

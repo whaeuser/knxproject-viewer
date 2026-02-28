@@ -25,7 +25,13 @@ Both servers can run simultaneously and share the same `index.html`. The fronten
 
 Logs are written to `logs/stdout.log`, `logs/stderr.log`, and `logs/knx_bus.log`.
 
-There are no test or lint commands configured.
+Run tests with:
+```bash
+.venv/bin/python3 -m pytest          # all tests
+.venv/bin/python3 -m pytest -v       # verbose
+.venv/bin/python3 -m pytest tests/test_helpers.py   # one file
+```
+Test files live in `tests/`. Dependencies: `pytest`, `pytest-asyncio`, `httpx` (installed in `.venv`).
 
 Test `.knxproj` files are available at `../xknxproject/test/resources/*.knxproj`.
 

@@ -1,5 +1,5 @@
 """
-Public read-only KNX Project Viewer — no bus monitor, no gateway connection.
+Public read-only OpenKNXViewer — no bus monitor, no gateway connection.
 Safe to expose to the internet.
 
 Run with:
@@ -17,7 +17,7 @@ from xknxproject.exceptions import InvalidPasswordException, XknxProjectExceptio
 
 INDEX_HTML = Path(__file__).parent / "index.html"
 
-app = FastAPI(title="KNX Project Viewer (Public)")
+app = FastAPI(title="OpenKNXViewer (Public)")
 
 
 @app.get("/.well-known/appspecific/com.chrome.devtools.json", include_in_schema=False)

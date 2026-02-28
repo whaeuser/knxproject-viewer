@@ -679,6 +679,11 @@
           </button>
         </div>
         <p x-show="llmError" x-text="llmError" class="mb-3 text-sm text-red-600"></p>
+        <!-- Export button — only shown when a response is available -->
+        <div x-show="llmResponse" class="flex justify-end mb-3">
+          <button @click="exportLlm()"
+                  class="text-sm text-gray-600 hover:text-gray-900">↓ Markdown</button>
+        </div>
         <!-- Reasoning (Denkprozess) — collapsible, streams while model thinks -->
         <details x-show="llmReasoning" class="mb-3">
           <summary class="text-xs text-gray-400 cursor-pointer select-none hover:text-gray-600">
@@ -1079,6 +1084,25 @@ function app() {
       } finally {
         this.llmLoading = false;
       }
+    },
+
+    exportLlm() {
+      const projectName = this.project?.info?.name ?? 'KNX-Projekt';
+      const question = this.llmQuestion?.trim() || 'Automatische Projektübersicht';
+      const lines = [
+        `# KI-Analyse: ${projectName}`,
+        '',
+        `**Frage:** ${question}`,
+        '',
+        '---',
+        '',
+        this.llmResponse,
+      ];
+      if (this.llmReasoning) {
+        lines.push('', '---', '', '## Denkprozess', '', this.llmReasoning);
+      }
+      const safe = projectName.replace(/[^a-zA-Z0-9_-]/g, '_');
+      this._download(lines.join('\n'), `ki_analyse_${safe}.md`, 'text/markdown;charset=utf-8');
     },
 
     async saveGatewayConfig() {

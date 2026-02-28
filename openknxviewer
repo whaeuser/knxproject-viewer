@@ -77,17 +77,19 @@ cmd_start() {
     done
     mkdir -p "$LOG_DIR"
 
-    local cfg_key default label pid_file server stdout_log stderr_log
+    local cfg_key default label pid_file server stdout_log stderr_log lc_label
     if $public; then
         cfg_key="server_port_public"; default=8004
         label="Öffentlicher Server"; pid_file="$PID_FILE_PUBLIC"
         server="server_public:app"
         stdout_log="stdout-public.log"; stderr_log="stderr-public.log"
+        lc_label="com.openknxviewer-public"
     else
         cfg_key="server_port"; default=8002
         label="Privater Server"; pid_file="$PID_FILE"
         server="server:app"
         stdout_log="stdout.log"; stderr_log="stderr.log"
+        lc_label="com.openknxviewer"
     fi
 
     local port
@@ -98,10 +100,28 @@ cmd_start() {
         port=$(_get_server_port "$cfg_key" "$default" "$label")
     fi
 
-    if [[ -f "$pid_file" ]] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
-        echo "$label läuft bereits (PID $(cat "$pid_file"), Port $port)"
+    # Check if already running (via PID file or launchctl)
+    local running_pid=""
+    [[ -f "$pid_file" ]] && kill -0 "$(cat "$pid_file")" 2>/dev/null && running_pid=$(cat "$pid_file")
+    [[ -z "$running_pid" ]] && running_pid=$(_launchctl_pid "$lc_label")
+    if [[ -n "$running_pid" ]]; then
+        echo "$label läuft bereits (PID $running_pid, Port $port)"
         exit 0
     fi
+
+    # If LaunchAgent plist exists, use launchctl to start
+    local plist
+    plist=$(_plist_path "$lc_label")
+    if [[ -n "$plist" ]]; then
+        launchctl load "$plist" 2>/dev/null || true
+        sleep 1
+        local new_pid
+        new_pid=$(_launchctl_pid "$lc_label")
+        echo "$label gestartet via LaunchAgent (PID ${new_pid:-?}, Port $port)"
+        return
+    fi
+
+    # No LaunchAgent — spawn manually
     cd "$SCRIPT_DIR"
     "$VENV_DIR/bin/uvicorn" "$server" --host 0.0.0.0 --port "$port" \
         >>"$LOG_DIR/$stdout_log" 2>>"$LOG_DIR/$stderr_log" &
@@ -109,22 +129,45 @@ cmd_start() {
     echo "$label gestartet (PID $!, Port $port)"
 }
 
+# ── launchctl helpers ─────────────────────────────────────────────────────────
+_launchctl_pid() {
+    # Returns the PID managed by launchctl for the given label, or empty string
+    local label="$1" pid
+    pid=$(launchctl list 2>/dev/null | awk -v lbl="$label" '$3==lbl{print $1}')
+    [[ "$pid" == "-" || -z "$pid" ]] && echo "" || echo "$pid"
+}
+
+_plist_path() {
+    local label="$1"
+    local p="$HOME/Library/LaunchAgents/${label}.plist"
+    [[ -f "$p" ]] && echo "$p" || echo ""
+}
+
 # ── stop ──────────────────────────────────────────────────────────────────────
 _stop_one() {
-    local pid_file="$1" label="$2"
-    if [[ -f "$pid_file" ]]; then
-        local pid
-        pid=$(cat "$pid_file")
-        if kill -0 "$pid" 2>/dev/null; then
-            kill "$pid"
-            echo "$label gestoppt (PID $pid)"
-        else
-            echo "$label war nicht aktiv"
-        fi
-        rm -f "$pid_file"
-    else
-        echo "Kein PID-File für $label gefunden"
+    local pid_file="$1" label="$2" lc_label="${3:-}"
+    local plist="" pid=""
+
+    # Resolve LaunchAgent plist
+    [[ -n "$lc_label" ]] && plist=$(_plist_path "$lc_label")
+
+    # Get actual PID (launchctl takes priority over stale PID file)
+    [[ -n "$lc_label" ]] && pid=$(_launchctl_pid "$lc_label")
+    if [[ -z "$pid" && -f "$pid_file" ]]; then
+        local file_pid; file_pid=$(cat "$pid_file")
+        kill -0 "$file_pid" 2>/dev/null && pid="$file_pid"
     fi
+
+    if [[ -n "$plist" ]]; then
+        launchctl unload "$plist" 2>/dev/null || true
+    fi
+    if [[ -n "$pid" ]]; then
+        kill "$pid" 2>/dev/null || true
+        echo "$label gestoppt (PID $pid)"
+    else
+        echo "$label war nicht aktiv"
+    fi
+    rm -f "$pid_file"
 }
 
 cmd_stop() {
@@ -134,20 +177,31 @@ cmd_stop() {
         [[ "$arg" == "--all"    ]] && all=true
     done
     if $all; then
-        _stop_one "$PID_FILE"        "Privater Server"
-        _stop_one "$PID_FILE_PUBLIC" "Öffentlicher Server"
+        _stop_one "$PID_FILE"        "Privater Server"     "com.openknxviewer"
+        _stop_one "$PID_FILE_PUBLIC" "Öffentlicher Server" "com.openknxviewer-public"
     elif $public; then
-        _stop_one "$PID_FILE_PUBLIC" "Öffentlicher Server"
+        _stop_one "$PID_FILE_PUBLIC" "Öffentlicher Server" "com.openknxviewer-public"
     else
-        _stop_one "$PID_FILE" "Privater Server"
+        _stop_one "$PID_FILE" "Privater Server" "com.openknxviewer"
     fi
 }
 
 # ── status ────────────────────────────────────────────────────────────────────
 _status_one() {
-    local pid_file="$1" label="$2" port="$3" is_private="${4:-false}"
+    local pid_file="$1" label="$2" port="$3" is_private="${4:-false}" lc_label="${5:-}"
+    local pid=""
+
+    # PID from file if still alive
     if [[ -f "$pid_file" ]] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
-        printf "%-24s läuft   (PID %s, Port %s)\n" "$label:" "$(cat "$pid_file")" "$port"
+        pid=$(cat "$pid_file")
+    fi
+    # Fall back to launchctl (covers LaunchAgent-managed processes)
+    if [[ -z "$pid" && -n "$lc_label" ]]; then
+        pid=$(_launchctl_pid "$lc_label")
+    fi
+
+    if [[ -n "$pid" ]]; then
+        printf "%-24s läuft   (PID %s, Port %s)\n" "$label:" "$pid" "$port"
         if [[ "$is_private" == "true" ]] && command -v curl &>/dev/null; then
             local gw
             gw=$(curl -sf "http://localhost:${port}/api/gateway" 2>/dev/null || true)
@@ -172,8 +226,8 @@ cmd_status() {
     local port_priv port_pub
     port_priv=$(_cfg_get "server_port"        "8002")
     port_pub=$( _cfg_get "server_port_public" "8004")
-    _status_one "$PID_FILE"        "Privater Server"     "$port_priv" "true"
-    _status_one "$PID_FILE_PUBLIC" "Öffentlicher Server" "$port_pub"  "false"
+    _status_one "$PID_FILE"        "Privater Server"     "$port_priv" "true"  "com.openknxviewer"
+    _status_one "$PID_FILE_PUBLIC" "Öffentlicher Server" "$port_pub"  "false" "com.openknxviewer-public"
 }
 
 # ── logs ──────────────────────────────────────────────────────────────────────

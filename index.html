@@ -268,47 +268,10 @@
                 <td class="px-4 py-3 text-gray-600" x-text="dev.order_number ?? '—'"></td>
                 <td class="px-4 py-3 text-gray-600 text-xs" x-text="dev.application ?? '—'"></td>
                 <td class="px-4 py-3">
-                  <div class="flex items-center gap-2">
-                    <button @click.stop="toggleDevice(dev.individual_address)"
-                      class="text-gray-400 hover:text-gray-700 text-xs w-4 text-center"
-                      x-text="expandedDevices.has(dev.individual_address) ? '▾' : '▸'">
-                    </button>
-                    <button @click.stop="navigateToDeviceCOs(dev.individual_address)"
-                      class="text-blue-600 text-xs hover:underline"
-                      x-text="(dev.communication_object_ids?.length ?? 0) + ' KOs'">
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              <!-- Expanded KOs -->
-              <tr x-show="expandedDevices.has(dev.individual_address)" class="bg-blue-50">
-                <td colspan="6" class="px-6 py-3">
-                  <div x-show="deviceCOs(dev.individual_address).length === 0" class="text-gray-400 text-xs">Keine Kommunikationsobjekte</div>
-                  <table class="w-full text-xs" x-show="deviceCOs(dev.individual_address).length > 0">
-                    <thead class="text-gray-500">
-                      <tr>
-                        <th class="text-left pr-4 pb-1">Nr.</th>
-                        <th class="text-left pr-4 pb-1">Name</th>
-                        <th class="text-left pr-4 pb-1">DPT</th>
-                        <th class="text-left pr-4 pb-1">Flags</th>
-                        <th class="text-left pb-1">Gruppenadressen</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <template x-for="co in deviceCOs(dev.individual_address)" :key="co._key">
-                        <tr :data-co-key="co._key"
-                          @click.stop="navigateToCO($el.dataset.coKey)"
-                          title="Zu Kommunikationsobjekt springen"
-                          class="border-t border-blue-100 hover:bg-blue-100 cursor-pointer">
-                          <td class="pr-4 py-1 font-mono" x-text="co.number"></td>
-                          <td class="pr-4 py-1" x-text="co.name"></td>
-                          <td class="pr-4 py-1 font-mono" :title="dptTitle(co.dpts?.[0])" x-text="co.dpts?.[0] ? (co.dpts[0].main + (co.dpts[0].sub != null ? '.' + String(co.dpts[0].sub).padStart(3,'0') : '')) : '—'"></td>
-                          <td class="pr-4 py-1 font-mono" :title="flagTitle(co)" x-text="flagString(co)"></td>
-                          <td class="py-1 text-blue-600 underline decoration-dotted" x-text="(co.group_address_links ?? []).join(', ') || '—'"></td>
-                        </tr>
-                      </template>
-                    </tbody>
-                  </table>
+                  <button @click.stop="navigateToDeviceCOs(dev.individual_address)"
+                    class="text-blue-600 text-xs hover:underline"
+                    x-text="(dev.communication_object_ids?.length ?? 0) + ' KOs'">
+                  </button>
                 </td>
               </tr>
             </template>
@@ -670,7 +633,6 @@ function app() {
     deviceSearch: '',
     gaSearch: '',
     coSearch: '',
-    expandedDevices: new Set(),
     expandedTopology: new Set(),
     expandedCODevices: new Set(),
     highlightedCO: null,
@@ -937,7 +899,6 @@ function app() {
       this.project = null;
       this.selectedFile = null;
       this.error = '';
-      this.expandedDevices = new Set();
       this.expandedTopology = new Set();
       this.expandedCODevices = new Set();
       this.highlightedCO = null;
@@ -1240,14 +1201,6 @@ function app() {
       );
     },
 
-    toggleDevice(addr) {
-      if (this.expandedDevices.has(addr)) {
-        this.expandedDevices.delete(addr);
-      } else {
-        this.expandedDevices.add(addr);
-      }
-      this.expandedDevices = new Set(this.expandedDevices);
-    },
 
     toggleTopology(key) {
       if (this.expandedTopology.has(key)) {

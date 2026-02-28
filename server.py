@@ -252,7 +252,7 @@ async def lifespan(app: FastAPI):
         await state["xknx"].stop()
 
 
-app = FastAPI(title="OpenKNXViewer", lifespan=lifespan)
+app = FastAPI(title="Open-KNXViewer", lifespan=lifespan)
 
 
 @app.get("/.well-known/appspecific/com.chrome.devtools.json", include_in_schema=False)

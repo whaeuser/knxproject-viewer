@@ -679,10 +679,23 @@
           </button>
         </div>
         <p x-show="llmError" x-text="llmError" class="mb-3 text-sm text-red-600"></p>
+        <!-- Reasoning (Denkprozess) — collapsible, streams while model thinks -->
+        <details x-show="llmReasoning" class="mb-3">
+          <summary class="text-xs text-gray-400 cursor-pointer select-none hover:text-gray-600">
+            Denkprozess anzeigen
+          </summary>
+          <div class="mt-2 whitespace-pre-wrap text-xs text-gray-400 bg-gray-50 rounded p-3 border border-gray-100 max-h-48 overflow-y-auto leading-relaxed"
+               x-text="llmReasoning"></div>
+        </details>
+        <!-- Main response -->
         <div x-show="llmResponse"
              class="whitespace-pre-wrap text-sm text-gray-800 bg-gray-50 rounded-lg p-4 leading-relaxed border border-gray-200"
              x-text="llmResponse"></div>
-        <p x-show="!llmResponse && !llmLoading" class="text-sm text-gray-400">
+        <!-- Placeholder while reasoning is streaming but no content yet -->
+        <p x-show="llmLoading && llmReasoning && !llmResponse" class="text-sm text-gray-400 italic">
+          Antwort wird formuliert …
+        </p>
+        <p x-show="!llmResponse && !llmLoading && !llmReasoning" class="text-sm text-gray-400">
           Stelle eine Frage zum Projekt oder klicke auf „Analysieren" für eine automatische Übersicht.
         </p>
       </div>
@@ -746,6 +759,7 @@ function app() {
     llmConfigured: false,
     llmQuestion: '',
     llmResponse: '',
+    llmReasoning: '',
     llmLoading: false,
     llmError: '',
 
@@ -1032,6 +1046,7 @@ function app() {
       this.llmLoading = true;
       this.llmError = '';
       this.llmResponse = '';
+      this.llmReasoning = '';
       try {
         const res = await fetch('/api/llm/analyze', {
           method: 'POST',
@@ -1053,7 +1068,9 @@ function app() {
             try {
               const d = JSON.parse(line.slice(6));
               if (d.error) { this.llmError = d.error; break; }
-              this.llmResponse += d.choices?.[0]?.delta?.content ?? '';
+              const delta = d.choices?.[0]?.delta ?? {};
+              this.llmReasoning += delta.reasoning ?? '';
+              this.llmResponse  += delta.content  ?? '';
             } catch (_) {}
           }
         }

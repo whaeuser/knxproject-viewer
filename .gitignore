@@ -5,3 +5,4 @@ __pycache__/
 last_project.json
 .server.pid
 .server-public.pid
+config.json

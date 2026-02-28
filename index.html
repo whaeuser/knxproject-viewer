@@ -381,8 +381,15 @@
       <div x-show="project">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-lg font-semibold text-gray-700">Gruppenadressen (<span x-text="filteredGAs.length"></span>)</h2>
-        <input x-model="gaSearch" type="search" placeholder="Suchen…"
-          class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        <div class="flex items-center gap-2">
+          <button x-show="!publicMode" @click="readAllGAs()"
+                  :disabled="wsStatus !== 'connected' || readingAll"
+                  class="text-xs bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                  :title="readingAll ? 'Lesen läuft…' : 'Alle Werte vom Bus lesen'"
+                  x-text="readingAll ? 'Lesen…' : 'Alle lesen'"></button>
+          <input x-model="gaSearch" type="search" placeholder="Suchen…"
+            class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        </div>
       </div>
       <div class="bg-white rounded-xl shadow overflow-x-auto">
         <table class="w-full text-sm">
@@ -725,8 +732,9 @@ function app() {
     liveLogFilter: '',
     liveLogPaused: false,
 
-    // GA write
+    // GA write / read-all
     gaWriteValues: {},
+    readingAll: false,
 
     // LLM
     llmApiKey: '',
@@ -963,6 +971,22 @@ function app() {
         });
       } catch (e) {
         alert('Netzwerkfehler: ' + e.message);
+      }
+    },
+
+    async readAllGAs() {
+      this.readingAll = true;
+      try {
+        const res = await fetch('/api/ga/read-all', { method: 'POST' });
+        if (!res.ok) {
+          const err = await res.json();
+          alert('Fehler: ' + (err.detail || 'Unbekannter Fehler'));
+        }
+      } catch (e) {
+        alert('Netzwerkfehler: ' + e.message);
+      } finally {
+        // Keep button disabled for ~3 s to avoid double-clicks while responses arrive
+        setTimeout(() => { this.readingAll = false; }, 3000);
       }
     },
 

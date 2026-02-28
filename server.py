@@ -476,6 +476,22 @@ async def ga_read(data: dict):
     return {"ok": True}
 
 
+@app.post("/api/ga/read-all")
+async def ga_read_all():
+    if not state["connected"] or state["xknx"] is None:
+        raise HTTPException(status_code=503, detail="Kein KNX-Gateway verbunden")
+    gas = list(state["ga_dpt_map"].keys())
+
+    async def _send_all():
+        for ga_str in gas:
+            tg = Telegram(destination_address=GroupAddress(ga_str), payload=GroupValueRead())
+            await state["xknx"].telegrams.put(tg)
+            await asyncio.sleep(0.05)  # 50 ms between requests to avoid flooding the bus
+
+    asyncio.create_task(_send_all())
+    return {"ok": True, "count": len(gas)}
+
+
 # ── LLM config & analysis ─────────────────────────────────────────────────────
 
 LLM_DEFAULT_MODEL = "z-ai/glm-5"

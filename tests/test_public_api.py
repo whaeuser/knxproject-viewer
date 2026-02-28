@@ -1,5 +1,8 @@
 """API tests for the public read-only server (server_public.py)."""
+from pathlib import Path
+
 import pytest
+import server_public
 
 from tests.conftest import KNXPROJ_ETS6, KNXPROJ_NOPASS
 
@@ -82,6 +85,55 @@ async def test_parse_no_password_project(public_client):
             data={"password": "", "language": "de-DE"},
         )
     assert r.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Demo endpoint
+# ---------------------------------------------------------------------------
+
+async def test_demo_available_when_file_exists(public_client, tmp_path, monkeypatch):
+    demo = tmp_path / "demo.knxproj"
+    demo.write_bytes(b"placeholder")
+    monkeypatch.setattr(server_public, "DEMO_PATH", demo)
+    r = await public_client.get("/api/demo/available")
+    assert r.status_code == 200
+    assert r.json() == {"available": True}
+
+
+async def test_demo_not_available_when_file_missing(public_client, tmp_path, monkeypatch):
+    monkeypatch.setattr(server_public, "DEMO_PATH", tmp_path / "nonexistent.knxproj")
+    r = await public_client.get("/api/demo/available")
+    assert r.status_code == 200
+    assert r.json() == {"available": False}
+
+
+async def test_demo_returns_404_when_file_missing(public_client, tmp_path, monkeypatch):
+    monkeypatch.setattr(server_public, "DEMO_PATH", tmp_path / "nonexistent.knxproj")
+    monkeypatch.setattr(server_public, "_demo_cache", None)
+    r = await public_client.get("/api/demo")
+    assert r.status_code == 404
+
+
+@pytest.mark.skipif(not KNXPROJ_ETS6.exists(), reason="Test resources not available")
+async def test_demo_parses_and_returns_project(public_client, monkeypatch):
+    monkeypatch.setattr(server_public, "DEMO_PATH", KNXPROJ_ETS6)
+    monkeypatch.setattr(server_public, "_demo_cache", None)
+    r = await public_client.get("/api/demo")
+    assert r.status_code == 200
+    data = r.json()
+    assert "devices" in data
+    assert "group_addresses" in data
+
+
+@pytest.mark.skipif(not KNXPROJ_ETS6.exists(), reason="Test resources not available")
+async def test_demo_result_is_cached(public_client, monkeypatch):
+    monkeypatch.setattr(server_public, "DEMO_PATH", KNXPROJ_ETS6)
+    monkeypatch.setattr(server_public, "_demo_cache", None)
+    r1 = await public_client.get("/api/demo")
+    r2 = await public_client.get("/api/demo")
+    assert r1.status_code == 200
+    assert r2.status_code == 200
+    assert server_public._demo_cache is not None
 
 
 async def test_parse_invalid_file_returns_error(public_client):

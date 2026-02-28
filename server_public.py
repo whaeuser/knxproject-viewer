@@ -16,8 +16,11 @@ from xknxproject import XKNXProj
 from xknxproject.exceptions import InvalidPasswordException, XknxProjectException
 
 INDEX_HTML = Path(__file__).parent / "index.html"
+DEMO_PATH = Path(__file__).parent / "demo.knxproj"
 
 app = FastAPI(title="OpenKNXViewer (Public)")
+
+_demo_cache = None
 
 
 @app.get("/.well-known/appspecific/com.chrome.devtools.json", include_in_schema=False)
@@ -33,6 +36,24 @@ def get_mode():
 @app.get("/")
 async def root():
     return FileResponse(INDEX_HTML)
+
+
+@app.get("/api/demo/available")
+def demo_available():
+    return {"available": DEMO_PATH.exists()}
+
+
+@app.get("/api/demo")
+async def get_demo():
+    global _demo_cache
+    if not DEMO_PATH.exists():
+        raise HTTPException(status_code=404, detail="Demo nicht verfügbar")
+    if _demo_cache is None:
+        try:
+            _demo_cache = XKNXProj(path=str(DEMO_PATH)).parse()
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Demo konnte nicht geladen werden: {exc}") from exc
+    return JSONResponse(content=_demo_cache)
 
 
 @app.post("/api/parse")

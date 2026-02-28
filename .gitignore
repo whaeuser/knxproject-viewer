@@ -2,3 +2,6 @@ logs/
 __pycache__/
 *.pyc
 .pytest_cache/
+last_project.json
+.server.pid
+.server-public.pid

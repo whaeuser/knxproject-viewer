@@ -212,37 +212,130 @@
       </div>
 
       <!-- KNX Security -->
-      <template x-if="secureGAs.length > 0">
-        <div class="mt-6">
-          <h2 class="text-lg font-semibold mb-4 text-gray-700">
-            🔒 KNX Data Secure
-            <span class="ml-2 text-sm font-normal text-gray-500"
-                  x-text="`${secureGAs.length} gesicherte Gruppenadresse${secureGAs.length !== 1 ? 'n' : ''}`"></span>
-          </h2>
-          <div class="bg-white rounded-xl shadow overflow-hidden">
-            <table class="w-full text-sm">
-              <thead class="bg-gray-50 text-gray-500 uppercase text-xs">
-                <tr>
-                  <th class="px-4 py-3 text-left">Adresse</th>
-                  <th class="px-4 py-3 text-left">Name</th>
-                  <th class="px-4 py-3 text-left">DPT</th>
-                  <th class="px-4 py-3 text-left">Beschreibung</th>
-                </tr>
-              </thead>
-              <tbody>
-                <template x-for="ga in secureGAs" :key="ga.address">
-                  <tr class="border-t hover:bg-gray-50">
-                    <td class="px-4 py-3 font-mono text-xs font-semibold" x-text="ga.address"></td>
-                    <td class="px-4 py-3 font-medium" x-text="ga.name || '—'"></td>
-                    <td class="px-4 py-3 font-mono text-xs"
-                        :title="dptTitle(ga.dpt)"
-                        x-text="ga.dpt ? (ga.dpt.main + (ga.dpt.sub != null ? '.' + String(ga.dpt.sub).padStart(3,'0') : '')) : '—'"></td>
-                    <td class="px-4 py-3 text-gray-600 text-xs" x-text="ga.description || '—'"></td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
+      <template x-if="secureGAs.length > 0 || (project?._security?.devices?.length > 0)">
+        <div class="mt-6" x-data="{ showSecrets: false }">
+          <div class="flex items-center gap-3 mb-4">
+            <h2 class="text-lg font-semibold text-gray-700">
+              🔒 KNX Data Secure
+            </h2>
+            <button @click="showSecrets = !showSecrets"
+                    :class="showSecrets ? 'bg-red-100 border-red-300 text-red-700' : 'bg-gray-100 border-gray-300 text-gray-600'"
+                    class="border rounded px-2 py-0.5 text-xs font-medium"
+                    x-text="showSecrets ? '🔓 Schlüssel verbergen' : '🔑 Schlüssel anzeigen'"></button>
           </div>
+
+          <!-- Gesicherte Gruppenadressen -->
+          <template x-if="secureGAs.length > 0">
+            <div class="mb-5">
+              <h3 class="text-sm font-semibold text-gray-500 uppercase mb-2 px-1"
+                  x-text="`Gesicherte Gruppenadressen (${secureGAs.length})`"></h3>
+              <div class="bg-white rounded-xl shadow overflow-hidden">
+                <table class="w-full text-sm">
+                  <thead class="bg-gray-50 text-gray-500 uppercase text-xs">
+                    <tr>
+                      <th class="px-4 py-3 text-left">Adresse</th>
+                      <th class="px-4 py-3 text-left">Name</th>
+                      <th class="px-4 py-3 text-left">DPT</th>
+                      <th class="px-4 py-3 text-left">Beschreibung</th>
+                      <th x-show="showSecrets" class="px-4 py-3 text-left">AES-128 Schlüssel</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="ga in secureGAs" :key="ga.address">
+                      <tr class="border-t hover:bg-gray-50">
+                        <td class="px-4 py-3 font-mono text-xs font-semibold" x-text="ga.address"></td>
+                        <td class="px-4 py-3 font-medium" x-text="ga.name || '—'"></td>
+                        <td class="px-4 py-3 font-mono text-xs"
+                            :title="dptTitle(ga.dpt)"
+                            x-text="ga.dpt ? (ga.dpt.main + (ga.dpt.sub != null ? '.' + String(ga.dpt.sub).padStart(3,'0') : '')) : '—'"></td>
+                        <td class="px-4 py-3 text-gray-600 text-xs" x-text="ga.description || '—'"></td>
+                        <td x-show="showSecrets" class="px-4 py-3 font-mono text-xs text-purple-700"
+                            x-text="project?._security?.ga_keys?.[ga.address] || '—'"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </template>
+
+          <!-- Alle GA-Schlüssel (auch ungesicherte) -->
+          <template x-if="showSecrets && Object.keys(project?._security?.ga_keys ?? {}).length > secureGAs.length">
+            <div class="mb-5">
+              <h3 class="text-sm font-semibold text-gray-500 uppercase mb-2 px-1">Alle GA-Schlüssel</h3>
+              <div class="bg-white rounded-xl shadow overflow-hidden">
+                <table class="w-full text-sm">
+                  <thead class="bg-gray-50 text-gray-500 uppercase text-xs">
+                    <tr>
+                      <th class="px-4 py-3 text-left">Adresse</th>
+                      <th class="px-4 py-3 text-left">Name</th>
+                      <th class="px-4 py-3 text-left">AES-128 Schlüssel</th>
+                      <th class="px-4 py-3 text-left">Gesichert</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="[addr, key] in Object.entries(project?._security?.ga_keys ?? {})" :key="addr">
+                      <template x-if="!project?.group_addresses?.[addr]?.data_secure">
+                        <tr class="border-t hover:bg-gray-50">
+                          <td class="px-4 py-3 font-mono text-xs font-semibold" x-text="addr"></td>
+                          <td class="px-4 py-3 text-sm" x-text="project?.group_addresses?.[addr]?.name || '—'"></td>
+                          <td class="px-4 py-3 font-mono text-xs text-purple-700" x-text="key"></td>
+                          <td class="px-4 py-3 text-xs text-gray-400">Nein</td>
+                        </tr>
+                      </template>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </template>
+
+          <!-- Gerätesicherheit -->
+          <template x-if="project?._security?.devices?.length > 0">
+            <div>
+              <h3 class="text-sm font-semibold text-gray-500 uppercase mb-2 px-1"
+                  x-text="`Gerätesicherheit (${project._security.devices.length})`"></h3>
+              <div class="bg-white rounded-xl shadow overflow-hidden">
+                <table class="w-full text-sm">
+                  <thead class="bg-gray-50 text-gray-500 uppercase text-xs">
+                    <tr>
+                      <th class="px-4 py-3 text-left">Gerät</th>
+                      <th class="px-4 py-3 text-left">PA</th>
+                      <th class="px-4 py-3 text-left">Feld</th>
+                      <th class="px-4 py-3 text-left">Wert</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="dev in project._security.devices" :key="dev.address">
+                      <template x-for="[field, label, secret] in [
+                        ['tool_key',            'Tool Key',                  true],
+                        ['device_auth_code',    'Auth Code',                 true],
+                        ['device_mgmt_password','Management Passwort',       true],
+                        ['sequence_number',     'Sequenznummer',             false],
+                      ]" :key="field">
+                        <template x-if="dev[field] != null">
+                          <tr class="border-t hover:bg-gray-50">
+                            <td class="px-4 py-3 font-medium text-sm" x-text="dev.name || '—'"></td>
+                            <td class="px-4 py-3 font-mono text-xs" x-text="dev.address"></td>
+                            <td class="px-4 py-3 text-gray-600 text-xs" x-text="label"></td>
+                            <td class="px-4 py-3 font-mono text-xs">
+                              <template x-if="!secret || showSecrets">
+                                <span :class="secret ? 'text-purple-700' : 'text-gray-800'" x-text="dev[field]"></span>
+                              </template>
+                              <template x-if="secret && !showSecrets">
+                                <span class="text-gray-300 tracking-widest select-none">••••••••••••</span>
+                              </template>
+                            </td>
+                          </tr>
+                        </template>
+                      </template>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </template>
+
         </div>
       </template>
     </div>

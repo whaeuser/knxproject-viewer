@@ -1007,6 +1007,11 @@
                    class="border border-gray-300 rounded px-2 py-1.5 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-blue-400" />
           </div>
           <div>
+            <label class="block text-xs text-gray-500 mb-1">Gerät (1–255)</label>
+            <input x-model="scanDevice" type="number" min="1" max="255" placeholder="alle"
+                   class="border border-gray-300 rounded px-2 py-1.5 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+          <div>
             <label class="block text-xs text-gray-500 mb-1">Timeout (ms)</label>
             <input x-model="scanTimeoutMs" type="number" min="500" max="5000" step="100"
                    class="border border-gray-300 rounded px-2 py-1.5 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-blue-400" />
@@ -1281,6 +1286,7 @@ function app() {
     paScanCancelled: false,
     scanArea: '',
     scanLine: '',
+    scanDevice: '',
     scanTimeoutMs: 1500,
     gaScanning: false,
     gaScanProgress: 0,
@@ -1840,6 +1846,7 @@ function app() {
       const body = { timeout_ms: Number(this.scanTimeoutMs) };
       if (this.scanArea !== '') body.area = Number(this.scanArea);
       if (this.scanLine !== '') body.line = Number(this.scanLine);
+      if (this.scanDevice !== '') body.device = Number(this.scanDevice);
       try {
         const res = await fetch('/api/bus/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         if (!res.ok) { const e = await res.json(); this.paScanning = false; alert('PA-Scan Fehler: ' + (e.detail || res.status)); }

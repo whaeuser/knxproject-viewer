@@ -984,8 +984,9 @@ async def bus_scan(data: dict):
     if state.get("pa_scan_running"):
         raise HTTPException(status_code=409, detail="PA-Scan läuft bereits")
 
-    area = data.get("area")   # None = alle Bereiche 1-15
-    line = data.get("line")   # None = alle Linien 1-15
+    area = data.get("area")     # None = alle Bereiche 1-15
+    line = data.get("line")     # None = alle Linien 1-15
+    device = data.get("device") # None = alle Geräte 1-255
     timeout_ms = max(500, min(5000, int(data.get("timeout_ms", 1500))))
 
     areas = [area] if area is not None else list(range(1, 16))
@@ -993,7 +994,8 @@ async def bus_scan(data: dict):
     for a in areas:
         lines = [line] if line is not None else list(range(1, 16))
         for li in lines:
-            for d in range(1, 256):
+            devices = [device] if device is not None else list(range(1, 256))
+            for d in devices:
                 addresses.append(f"{a}.{li}.{d}")
 
     state["pa_scan_running"] = True

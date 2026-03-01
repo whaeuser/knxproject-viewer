@@ -424,10 +424,8 @@
                     </template>
                   </td>
                   <td class="px-4 py-3 font-mono text-sm font-semibold">
-                    <span :class="ga.lastValue === '<GroupValueRead />' ? 'text-amber-600 cursor-help' : ''"
-                          :title="ga.lastValue === '<GroupValueRead />'
-                            ? 'Keine Antwort empfangen – mögliche Ursachen:\n• Kein Gerät hat das R-Flag für diese GA gesetzt\n• Gerät ist offline oder nicht erreichbar\n• Antwort kam auf einer anderen GA'
-                            : undefined"
+                    <span :class="valueClass(ga.lastValue)"
+                          :title="valueTitle(ga.lastValue)"
                           x-text="ga.lastValue"></span>
                   </td>
                   <td class="px-4 py-3 font-mono text-xs text-gray-400" x-text="ga.lastTs.split(' ')[1] ?? ga.lastTs"></td>
@@ -485,10 +483,8 @@
                 <td x-show="!publicMode" class="px-4 py-3">
                   <template x-if="currentValues[ga.address]">
                     <span class="font-mono text-sm"
-                          :class="currentValues[ga.address]?.value === '<GroupValueRead />' ? 'text-amber-600 cursor-help' : 'text-gray-800'"
-                          :title="currentValues[ga.address]?.value === '<GroupValueRead />'
-                            ? 'Keine Antwort empfangen – mögliche Ursachen:\n• Kein Gerät hat das R-Flag für diese GA gesetzt\n• Gerät ist offline oder nicht erreichbar\n• Antwort kam auf einer anderen GA'
-                            : currentValues[ga.address]?.ts"
+                          :class="valueClass(currentValues[ga.address]?.value)"
+                          :title="valueTitle(currentValues[ga.address]?.value, currentValues[ga.address]?.ts)"
                           x-text="currentValues[ga.address]?.value"></span>
                   </template>
                   <span x-show="!currentValues[ga.address]" class="text-gray-300 text-sm">—</span>
@@ -722,7 +718,7 @@
                       x-text="entry.ga"
                       @click="gaSearch = entry.ga; activeTab = 'group_addresses'"></td>
                   <td class="px-3 py-2 text-gray-700 text-xs min-w-[220px] max-w-[280px] truncate" x-text="entry.ga_name" :title="entry.ga_name"></td>
-                  <td class="px-3 py-2 font-semibold text-gray-900 text-xs" x-text="entry.value"
+                  <td class="px-3 py-2 text-xs" :class="valueClass(entry.value)" x-text="entry.value"
                       :title="[entry.dpt ? 'DPT: ' + entry.dpt : '', entry.raw && entry.raw !== entry.value ? 'Raw: ' + entry.raw : ''].filter(Boolean).join(' | ') || ''"></td>
                 </tr>
               </template>
@@ -1540,6 +1536,18 @@ function app() {
 
     get secureGAs() {
       return Object.values(this.project?.group_addresses ?? {}).filter(ga => ga.data_secure);
+    },
+
+    valueClass(v) {
+      if (v === 'Ein') return 'text-green-600 font-semibold';
+      if (v === 'Aus') return 'text-red-500 font-semibold';
+      if (v === '<GroupValueRead />') return 'text-amber-600 cursor-help';
+      return 'text-gray-800';
+    },
+
+    valueTitle(v, fallback) {
+      if (v === '<GroupValueRead />') return 'Keine Antwort empfangen – mögliche Ursachen:\n• Kein Gerät hat das R-Flag für diese GA gesetzt\n• Gerät ist offline oder nicht erreichbar\n• Antwort kam auf einer anderen GA';
+      return fallback ?? undefined;
     },
 
     get allDevices() {

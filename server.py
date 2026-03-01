@@ -129,8 +129,9 @@ async def _process_telegram(telegram):
         sub = getattr(transcoder, "dpt_sub_number", None)
         if main is not None:
             dpt = f"{main}.{str(sub).zfill(3)}" if sub is not None else str(main)
-        if isinstance(decoded, bool):
-            value = "Ein" if decoded else "Aus"
+        bool_val = decoded if isinstance(decoded, bool) else (decoded.value if isinstance(getattr(decoded, "value", None), bool) else None)
+        if bool_val is not None:
+            value = "Ein" if bool_val else "Aus"
         elif isinstance(decoded, float):
             value = f"{decoded:.2f}{' ' + unit if unit else ''}"
         else:

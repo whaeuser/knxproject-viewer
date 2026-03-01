@@ -88,7 +88,7 @@
         <span x-show="!publicMode" class="flex items-center gap-1.5 text-sm border-l pl-4">
           <span class="w-2 h-2 rounded-full flex-shrink-0"
                 :class="wsStatus === 'connected' ? 'bg-green-500' : 'bg-red-400'"></span>
-          <span class="text-gray-600" x-text="wsStatus === 'connected' ? gatewayIP : 'Kein Gateway'"></span>
+          <span class="text-gray-600" x-text="wsStatus === 'connected' ? (connectionType === 'remote_gateway' ? 'Remote-Gateway' : gatewayIP) : 'Kein Gateway'"></span>
           <button @click="showGatewayConfig = true" class="text-gray-400 hover:text-gray-700 ml-0.5" title="Gateway konfigurieren">⚙</button>
         </span>
       </div>
@@ -98,21 +98,51 @@
     <div x-show="showGatewayConfig" x-cloak
          class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
          @keydown.escape.window="showGatewayConfig = false">
-      <div class="bg-white rounded-xl p-6 w-80 shadow-2xl">
-        <h3 class="text-base font-semibold text-gray-800 mb-4">KNX/IP Gateway</h3>
+      <div class="bg-white rounded-xl p-6 shadow-2xl" style="width:22rem">
+        <h3 class="text-base font-semibold text-gray-800 mb-4">KNX Gateway</h3>
         <div class="space-y-3">
           <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Verbindungstyp</label>
+            <select x-model="connectionType"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+              <option value="local">Lokal (KNX/IP direkt)</option>
+              <option value="remote_gateway">Remote-Gateway (Proxy)</option>
+            </select>
+          </div>
+          <!-- Lokale Verbindung: IP + Port -->
+          <div x-show="connectionType === 'local'">
             <label class="block text-sm font-medium text-gray-700 mb-1">IP-Adresse</label>
             <input x-model="gatewayIP" placeholder="192.168.1.100" type="text"
                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
           </div>
-          <div>
+          <div x-show="connectionType === 'local'">
             <label class="block text-sm font-medium text-gray-700 mb-1">Port</label>
             <input x-model.number="gatewayPort" type="number" min="1" max="65535"
                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
           </div>
+          <!-- Remote-Gateway: Token + Proxy-Status -->
+          <div x-show="connectionType === 'remote_gateway'" class="space-y-2">
+            <label class="block text-sm font-medium text-gray-700">Proxy-Token</label>
+            <div class="flex gap-1.5">
+              <input :value="remoteGatewayToken" readonly type="text"
+                     class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono bg-gray-50 focus:outline-none" />
+              <button @click="copyToken()"
+                      class="px-2.5 py-2 rounded-lg border border-gray-300 text-sm hover:bg-gray-100 transition-colors"
+                      :title="tokenCopied ? 'Kopiert!' : 'Token kopieren'"
+                      x-text="tokenCopied ? '✓' : '⎘'"></button>
+            </div>
+            <p class="text-xs text-gray-500">Starte den Proxy auf dem Remote-Rechner:</p>
+            <pre class="text-xs bg-gray-100 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed"
+                 x-text="`python3 knx_gateway_proxy.py \\\n  --server-url &quot;${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/remote-gateway?token=${remoteGatewayToken}&quot; \\\n  --knx-ip 192.168.1.100`"></pre>
+            <div class="flex items-center gap-2 text-xs mt-1">
+              <span class="w-2 h-2 rounded-full flex-shrink-0"
+                    :class="remoteGatewayConnected ? 'bg-green-500' : 'bg-yellow-400'"></span>
+              <span class="text-gray-600"
+                    x-text="remoteGatewayConnected ? 'Proxy verbunden & KNX aktiv' : 'Warte auf Proxy…'"></span>
+            </div>
+          </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Sprache</label>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Sprache (.knxproj)</label>
             <select x-model="gatewayLanguage"
                     class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
               <option value="de-DE">Deutsch (de-DE)</option>
@@ -123,7 +153,7 @@
         <p x-show="gatewayError" x-text="gatewayError" class="mt-2 text-sm text-red-600"></p>
         <div class="flex gap-2 mt-5">
           <button @click="saveGatewayConfig()"
-                  class="flex-1 bg-blue-600 text-white text-sm font-semibold py-2 rounded-lg hover:bg-blue-700 transition-colors">Verbinden</button>
+                  class="flex-1 bg-blue-600 text-white text-sm font-semibold py-2 rounded-lg hover:bg-blue-700 transition-colors">Speichern</button>
           <button @click="showGatewayConfig = false; gatewayError = ''"
                   class="flex-1 bg-gray-100 text-gray-700 text-sm font-semibold py-2 rounded-lg hover:bg-gray-200 transition-colors">Abbrechen</button>
         </div>
@@ -180,6 +210,41 @@
           </tbody>
         </table>
       </div>
+
+      <!-- KNX Security -->
+      <template x-if="secureGAs.length > 0">
+        <div class="mt-6">
+          <h2 class="text-lg font-semibold mb-4 text-gray-700">
+            🔒 KNX Data Secure
+            <span class="ml-2 text-sm font-normal text-gray-500"
+                  x-text="`${secureGAs.length} gesicherte Gruppenadresse${secureGAs.length !== 1 ? 'n' : ''}`"></span>
+          </h2>
+          <div class="bg-white rounded-xl shadow overflow-hidden">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50 text-gray-500 uppercase text-xs">
+                <tr>
+                  <th class="px-4 py-3 text-left">Adresse</th>
+                  <th class="px-4 py-3 text-left">Name</th>
+                  <th class="px-4 py-3 text-left">DPT</th>
+                  <th class="px-4 py-3 text-left">Beschreibung</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="ga in secureGAs" :key="ga.address">
+                  <tr class="border-t hover:bg-gray-50">
+                    <td class="px-4 py-3 font-mono text-xs font-semibold" x-text="ga.address"></td>
+                    <td class="px-4 py-3 font-medium" x-text="ga.name || '—'"></td>
+                    <td class="px-4 py-3 font-mono text-xs"
+                        :title="dptTitle(ga.dpt)"
+                        x-text="ga.dpt ? (ga.dpt.main + (ga.dpt.sub != null ? '.' + String(ga.dpt.sub).padStart(3,'0') : '')) : '—'"></td>
+                    <td class="px-4 py-3 text-gray-600 text-xs" x-text="ga.description || '—'"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </template>
     </div>
 
     <!-- DEVICES TAB -->
@@ -358,7 +423,13 @@
                              x-init="$nextTick(() => $el.focus())" />
                     </template>
                   </td>
-                  <td class="px-4 py-3 font-mono text-sm font-semibold" x-text="ga.lastValue"></td>
+                  <td class="px-4 py-3 font-mono text-sm font-semibold">
+                    <span :class="ga.lastValue === '<GroupValueRead />' ? 'text-amber-600 cursor-help' : ''"
+                          :title="ga.lastValue === '<GroupValueRead />'
+                            ? 'Keine Antwort empfangen – mögliche Ursachen:\n• Kein Gerät hat das R-Flag für diese GA gesetzt\n• Gerät ist offline oder nicht erreichbar\n• Antwort kam auf einer anderen GA'
+                            : undefined"
+                          x-text="ga.lastValue"></span>
+                  </td>
                   <td class="px-4 py-3 font-mono text-xs text-gray-400" x-text="ga.lastTs.split(' ')[1] ?? ga.lastTs"></td>
                   <td class="px-4 py-3">
                     <div class="flex flex-wrap gap-1">
@@ -413,8 +484,11 @@
                 <td class="px-4 py-3 text-gray-600 text-xs" x-text="ga.description || '—'"></td>
                 <td x-show="!publicMode" class="px-4 py-3">
                   <template x-if="currentValues[ga.address]">
-                    <span class="font-mono text-sm text-gray-800"
-                          :title="currentValues[ga.address]?.ts"
+                    <span class="font-mono text-sm"
+                          :class="currentValues[ga.address]?.value === '<GroupValueRead />' ? 'text-amber-600 cursor-help' : 'text-gray-800'"
+                          :title="currentValues[ga.address]?.value === '<GroupValueRead />'
+                            ? 'Keine Antwort empfangen – mögliche Ursachen:\n• Kein Gerät hat das R-Flag für diese GA gesetzt\n• Gerät ist offline oder nicht erreichbar\n• Antwort kam auf einer anderen GA'
+                            : currentValues[ga.address]?.ts"
                           x-text="currentValues[ga.address]?.value"></span>
                   </template>
                   <span x-show="!currentValues[ga.address]" class="text-gray-300 text-sm">—</span>
@@ -621,7 +695,7 @@
         <span class="flex items-center gap-1.5 text-sm">
           <span class="w-2 h-2 rounded-full flex-shrink-0"
                 :class="wsStatus === 'connected' ? 'bg-green-500' : 'bg-red-400'"></span>
-          <span class="text-gray-500" x-text="wsStatus === 'connected' ? ('Verbunden: ' + gatewayIP) : 'Kein Gateway'"></span>
+          <span class="text-gray-500" x-text="wsStatus === 'connected' ? ('Verbunden: ' + (connectionType === 'remote_gateway' ? 'Remote-Gateway' : gatewayIP)) : 'Kein Gateway'"></span>
         </span>
       </div>
 
@@ -749,6 +823,10 @@ function app() {
     gatewayLanguage: 'de-DE',
     gatewayError: '',
     showGatewayConfig: false,
+    connectionType: 'local',
+    remoteGatewayToken: '',
+    remoteGatewayConnected: false,
+    tokenCopied: false,
     currentValues: {},
     liveLog: [],
     liveLogFilter: '',
@@ -785,6 +863,7 @@ function app() {
         this.loadAnnotations();
         this.loadLastProjectInfo();
         this.loadLlmConfig();
+        this.loadGatewayInfo();
       } else {
         try {
           const res = await fetch('/api/demo/available');
@@ -797,6 +876,17 @@ function app() {
       try {
         const res = await fetch('/api/annotations');
         if (res.ok) this.annotations = await res.json();
+      } catch (_) {}
+    },
+
+    async loadGatewayInfo() {
+      try {
+        const res = await fetch('/api/gateway');
+        if (res.ok) {
+          const cfg = await res.json();
+          this.connectionType = cfg.connection_type || 'local';
+          this.remoteGatewayToken = cfg.remote_gateway_token || '';
+        }
       } catch (_) {}
     },
 
@@ -878,8 +968,12 @@ function app() {
         const msg = JSON.parse(event.data);
         if (msg.type === 'status') {
           this.wsStatus = msg.connected ? 'connected' : 'disconnected';
-          this.gatewayIP = msg.ip || '';
-          this.gatewayPort = msg.port || 3671;
+          if (msg.ip === 'remote') {
+            this.remoteGatewayConnected = msg.connected;
+          } else {
+            this.gatewayIP = msg.ip || '';
+            this.gatewayPort = msg.port || 3671;
+          }
           this.gatewayLanguage = msg.language || 'de-DE';
         } else if (msg.type === 'snapshot') {
           this.currentValues = msg.values;
@@ -1108,16 +1202,29 @@ function app() {
     async saveGatewayConfig() {
       this.gatewayError = '';
       try {
+        const payload = { language: this.gatewayLanguage, connection_type: this.connectionType };
+        if (this.connectionType === 'local') {
+          payload.ip = this.gatewayIP;
+          payload.port = this.gatewayPort;
+        }
         const res = await fetch('/api/gateway', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ip: this.gatewayIP, port: this.gatewayPort, language: this.gatewayLanguage }),
+          body: JSON.stringify(payload),
         });
         if (res.ok) this.showGatewayConfig = false;
         else this.gatewayError = 'Fehler beim Speichern';
       } catch (e) {
         this.gatewayError = 'Netzwerkfehler: ' + e.message;
       }
+    },
+
+    async copyToken() {
+      try {
+        await navigator.clipboard.writeText(this.remoteGatewayToken);
+        this.tokenCopied = true;
+        setTimeout(() => { this.tokenCopied = false; }, 2000);
+      } catch (_) {}
     },
 
     get visibleTabs() {
@@ -1429,6 +1536,10 @@ function app() {
         ['Sprache', info.language_code],
         ['xknxproject Version', info.xknxproject_version],
       ].filter(([, v]) => v !== undefined && v !== null && v !== '');
+    },
+
+    get secureGAs() {
+      return Object.values(this.project?.group_addresses ?? {}).filter(ga => ga.data_secure);
     },
 
     get allDevices() {

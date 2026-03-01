@@ -29,6 +29,10 @@ def reset_server_state():
             "telegram_buffer": collections.deque(maxlen=500),
             "ws_clients": set(),
             "connect_task": None,
+            "connection_type": "local",
+            "remote_gateway_token": "",
+            "remote_gateway_ws": None,
+            "remote_gateway_connected": False,
         }
     )
     yield

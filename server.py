@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import tempfile
+import uuid
 from collections import deque
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -13,15 +14,15 @@ from pathlib import Path
 from typing import Set
 
 import httpx
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from xknx import XKNX
-from xknx.dpt import DPTBase
+from xknx.dpt import DPTArray, DPTBase, DPTBinary
 from xknx.io import ConnectionConfig, ConnectionType
 from xknx.telegram import Telegram
-from xknx.telegram.address import GroupAddress
-from xknx.telegram.apci import GroupValueRead, GroupValueWrite
+from xknx.telegram.address import GroupAddress, IndividualAddress
+from xknx.telegram.apci import GroupValueRead, GroupValueResponse, GroupValueWrite
 from xknxproject import XKNXProj
 from xknxproject.exceptions import InvalidPasswordException, XknxProjectException
 
@@ -43,13 +44,24 @@ state: dict = {
     "telegram_buffer": deque(maxlen=500),
     "ws_clients": set(),
     "connect_task": None,
+    "connection_type": "local",
+    "remote_gateway_token": "",
+    "remote_gateway_ws": None,
+    "remote_gateway_connected": False,
 }
 
 
 def load_config() -> dict:
+    defaults = {"gateway_ip": "", "gateway_port": 3671, "language": "de-DE",
+                "connection_type": "local", "remote_gateway_token": ""}
     if CONFIG_PATH.exists():
-        return json.loads(CONFIG_PATH.read_text())
-    return {"gateway_ip": "", "gateway_port": 3671, "language": "de-DE"}
+        cfg = {**defaults, **json.loads(CONFIG_PATH.read_text())}
+    else:
+        cfg = defaults
+    if not cfg["remote_gateway_token"]:
+        cfg["remote_gateway_token"] = str(uuid.uuid4())
+        save_config(cfg)
+    return cfg
 
 
 def save_config(cfg: dict):
@@ -155,6 +167,11 @@ async def knx_connect_loop():
     state["gateway_ip"] = ip
     state["gateway_port"] = port
     state["language"] = cfg.get("language", "de-DE")
+    state["connection_type"] = cfg.get("connection_type", "local")
+    state["remote_gateway_token"] = cfg.get("remote_gateway_token", "")
+
+    if state["connection_type"] == "remote_gateway":
+        return  # Proxy verbindet sich von außen — hier nichts zu tun
 
     if not ip:
         return
@@ -277,22 +294,29 @@ async def root():
 
 @app.get("/api/gateway")
 def get_gateway():
+    cfg = load_config()
     return {
         "ip": state["gateway_ip"],
         "port": state["gateway_port"],
         "connected": state["connected"],
         "language": state["language"],
+        "connection_type": state.get("connection_type", "local"),
+        "remote_gateway_token": cfg.get("remote_gateway_token", ""),
+        "remote_gateway_connected": state.get("remote_gateway_connected", False),
     }
 
 
 @app.post("/api/gateway")
 async def set_gateway(data: dict):
-    save_config({
-        "gateway_ip": data["ip"],
-        "gateway_port": data.get("port", 3671),
-        "language": data.get("language", "de-DE"),
+    cfg = load_config()
+    cfg.update({
+        "gateway_ip": data.get("ip", cfg["gateway_ip"]),
+        "gateway_port": data.get("port", cfg["gateway_port"]),
+        "language": data.get("language", cfg["language"]),
+        "connection_type": data.get("connection_type", cfg["connection_type"]),
     })
-    state["language"] = data.get("language", "de-DE")
+    save_config(cfg)
+    state["language"] = cfg["language"]
     await start_connect_task()
     return {"ok": True}
 
@@ -407,13 +431,73 @@ async def websocket_endpoint(ws: WebSocket):
         state["ws_clients"].discard(ws)
 
 
+# ── Remote Gateway ────────────────────────────────────────────────────────────
+
+def _make_telegram_from_proxy(msg: dict) -> Telegram:
+    apci_map = {
+        "GroupValueWrite": GroupValueWrite,
+        "GroupValueRead": GroupValueRead,
+        "GroupValueResponse": GroupValueResponse,
+    }
+    ApciClass = apci_map[msg["apci"]]
+    p_type = msg.get("payload_type", "none")
+    p_val = msg.get("payload_value")
+    if ApciClass is GroupValueRead:
+        payload = GroupValueRead()
+    elif p_type == "binary":
+        payload = ApciClass(DPTBinary(p_val))
+    else:
+        payload = ApciClass(DPTArray(tuple(p_val)))
+    return Telegram(
+        source_address=IndividualAddress(msg["src"]),
+        destination_address=GroupAddress(msg["ga"]),
+        payload=payload,
+    )
+
+
+@app.websocket("/ws/remote-gateway")
+async def remote_gateway_endpoint(ws: WebSocket, token: str = Query(...)):
+    cfg = load_config()
+    if not cfg.get("remote_gateway_token") or token != cfg["remote_gateway_token"]:
+        await ws.close(code=4001)
+        return
+    if state.get("connection_type") != "remote_gateway":
+        await ws.close(code=4002)
+        return
+    await ws.accept()
+    state["remote_gateway_ws"] = ws
+    try:
+        while True:
+            msg = json.loads(await ws.receive_text())
+            if msg["type"] == "status":
+                state["remote_gateway_connected"] = msg.get("connected", False)
+                state["connected"] = state["remote_gateway_connected"]
+                await broadcast({
+                    "type": "status",
+                    "connected": state["connected"],
+                    "ip": "remote",
+                    "port": 0,
+                    "language": state["language"],
+                })
+            elif msg["type"] == "telegram":
+                telegram = _make_telegram_from_proxy(msg)
+                asyncio.create_task(_process_telegram(telegram))
+    except WebSocketDisconnect:
+        pass
+    finally:
+        state["remote_gateway_ws"] = None
+        state["remote_gateway_connected"] = False
+        state["connected"] = False
+        await broadcast({"type": "status", "connected": False})
+
+
 # ── GA Write / Read ───────────────────────────────────────────────────────────
 
 @app.post("/api/ga/write")
 async def ga_write(data: dict):
     ga_str = data.get("ga", "")
     value_str = str(data.get("value", ""))
-    if not state["connected"] or state["xknx"] is None:
+    if not state["connected"]:
         raise HTTPException(status_code=503, detail="Kein KNX-Gateway verbunden")
     dpt_info = state["ga_dpt_map"].get(ga_str)
     if not dpt_info:
@@ -436,7 +520,19 @@ async def ga_write(data: dict):
         raise HTTPException(status_code=422, detail=f"Wert konnte nicht kodiert werden: {exc}") from exc
 
     telegram = Telegram(destination_address=GroupAddress(ga_str), payload=payload)
-    await state["xknx"].telegrams.put(telegram)
+    if state.get("connection_type") == "remote_gateway":
+        gw_ws = state.get("remote_gateway_ws")
+        if gw_ws is None:
+            raise HTTPException(status_code=503, detail="Remote-Gateway nicht verbunden")
+        raw_payload = payload.value
+        if isinstance(raw_payload, DPTBinary):
+            p_type, p_val = "binary", raw_payload.value
+        else:
+            p_type, p_val = "array", list(raw_payload.value)
+        await gw_ws.send_json({"type": "write", "ga": ga_str,
+                               "payload_type": p_type, "payload_value": p_val})
+    else:
+        await state["xknx"].telegrams.put(telegram)
 
     # Update local state so current_values and WebSocket clients reflect the sent value
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
@@ -469,24 +565,38 @@ async def ga_write(data: dict):
 @app.post("/api/ga/read")
 async def ga_read(data: dict):
     ga_str = data.get("ga", "")
-    if not state["connected"] or state["xknx"] is None:
+    if not state["connected"]:
         raise HTTPException(status_code=503, detail="Kein KNX-Gateway verbunden")
-    telegram = Telegram(destination_address=GroupAddress(ga_str), payload=GroupValueRead())
-    await state["xknx"].telegrams.put(telegram)
+    if state.get("connection_type") == "remote_gateway":
+        gw_ws = state.get("remote_gateway_ws")
+        if gw_ws is None:
+            raise HTTPException(status_code=503, detail="Remote-Gateway nicht verbunden")
+        await gw_ws.send_json({"type": "read", "ga": ga_str})
+    else:
+        telegram = Telegram(destination_address=GroupAddress(ga_str), payload=GroupValueRead())
+        await state["xknx"].telegrams.put(telegram)
     return {"ok": True}
 
 
 @app.post("/api/ga/read-all")
 async def ga_read_all():
-    if not state["connected"] or state["xknx"] is None:
+    if not state["connected"]:
         raise HTTPException(status_code=503, detail="Kein KNX-Gateway verbunden")
     gas = list(state["ga_dpt_map"].keys())
 
     async def _send_all():
-        for ga_str in gas:
-            tg = Telegram(destination_address=GroupAddress(ga_str), payload=GroupValueRead())
-            await state["xknx"].telegrams.put(tg)
-            await asyncio.sleep(0.05)  # 50 ms between requests to avoid flooding the bus
+        if state.get("connection_type") == "remote_gateway":
+            gw_ws = state.get("remote_gateway_ws")
+            if gw_ws is None:
+                return
+            for ga_str in gas:
+                await gw_ws.send_json({"type": "read", "ga": ga_str})
+                await asyncio.sleep(0.05)
+        else:
+            for ga_str in gas:
+                tg = Telegram(destination_address=GroupAddress(ga_str), payload=GroupValueRead())
+                await state["xknx"].telegrams.put(tg)
+                await asyncio.sleep(0.05)  # 50 ms between requests to avoid flooding the bus
 
     asyncio.create_task(_send_all())
     return {"ok": True, "count": len(gas)}

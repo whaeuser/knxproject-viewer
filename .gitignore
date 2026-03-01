@@ -6,3 +6,5 @@ last_project.json
 .server.pid
 .server-public.pid
 config.json
+.venv/
+.venv-proxy/

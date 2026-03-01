@@ -10,7 +10,11 @@ class TestLoadConfig:
     def test_returns_defaults_when_no_file(self, tmp_path, monkeypatch):
         monkeypatch.setattr(server, "CONFIG_PATH", tmp_path / "config.json")
         result = server.load_config()
-        assert result == {"gateway_ip": "", "gateway_port": 3671, "language": "de-DE"}
+        assert result["gateway_ip"] == ""
+        assert result["gateway_port"] == 3671
+        assert result["language"] == "de-DE"
+        assert result["connection_type"] == "local"
+        assert result["remote_gateway_token"]  # auto-generated UUID4
 
     def test_reads_existing_file(self, tmp_path, monkeypatch):
         cfg_path = tmp_path / "config.json"
@@ -40,9 +44,15 @@ class TestSaveConfig:
     def test_roundtrip(self, tmp_path, monkeypatch):
         cfg_path = tmp_path / "config.json"
         monkeypatch.setattr(server, "CONFIG_PATH", cfg_path)
-        data = {"gateway_ip": "10.0.0.1", "gateway_port": 3672, "language": "en-US"}
+        token = "test-token-1234"
+        data = {"gateway_ip": "10.0.0.1", "gateway_port": 3672, "language": "en-US",
+                "connection_type": "local", "remote_gateway_token": token}
         server.save_config(data)
-        assert server.load_config() == data
+        result = server.load_config()
+        assert result["gateway_ip"] == "10.0.0.1"
+        assert result["gateway_port"] == 3672
+        assert result["language"] == "en-US"
+        assert result["remote_gateway_token"] == token
 
     def test_overwrites_existing(self, tmp_path, monkeypatch):
         cfg_path = tmp_path / "config.json"

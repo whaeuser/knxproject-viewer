@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+# knx_proxy — Startskript für den KNX Gateway Proxy (Mac / Linux / Raspberry Pi)
+#
+# Verwendung:
+#   ./knx_proxy setup                          Venv erstellen & Pakete installieren
+#   ./knx_proxy [OPTIONEN]                     Proxy starten
+#
+# Optionen (werden direkt an knx_gateway_proxy.py weitergegeben):
+#   --server-url URL      WebSocket-URL des Servers inkl. Token
+#                         Beispiel: wss://host/ws/remote-gateway?token=TOKEN
+#                         Lokal:    ws://localhost:8002/ws/remote-gateway?token=TOKEN
+#   --knx-ip IP           IP-Adresse des lokalen KNX/IP-Gateways
+#   --knx-port PORT       KNX-Port (Standard: 3671)
+#   --knx-type ip|usb     Verbindungstyp (Standard: ip)
+#   --ssl-no-verify       TLS-Zertifikat nicht prüfen (nur für lokale Tests)
+#
+# Konfigurationsdatei (Alternative zu CLI-Argumeten):
+#   proxy_config.json im selben Verzeichnis anlegen:
+#   {"server_url": "wss://...", "knx_ip": "192.168.1.100"}
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROXY_SCRIPT="$SCRIPT_DIR/knx_gateway_proxy.py"
+PROXY_CFG="$SCRIPT_DIR/proxy_config.json"
+VENV_DIR="$SCRIPT_DIR/.venv-proxy"
+VENV_PYTHON="$VENV_DIR/bin/python3"
+
+# ── Python-Interpreter finden ─────────────────────────────────────────────────
+_find_system_python() {
+    for py in python3 python; do
+        if command -v "$py" &>/dev/null; then
+            local ver
+            ver=$("$py" -c "import sys; print(sys.version_info.major)" 2>/dev/null || echo "")
+            if [[ "$ver" == "3" ]]; then
+                echo "$py"; return
+            fi
+        fi
+    done
+    echo ""
+}
+
+# ── setup ─────────────────────────────────────────────────────────────────────
+cmd_setup() {
+    local py
+    py=$(_find_system_python)
+    if [[ -z "$py" ]]; then
+        echo "Fehler: Python 3 nicht gefunden."
+        echo "  Raspberry Pi / Debian:  sudo apt install python3 python3-venv python3-pip"
+        echo "  macOS:                  brew install python"
+        exit 1
+    fi
+
+    echo "==> Verwende System-Python: $("$py" --version)"
+    echo "==> Erstelle virtuelle Umgebung in $VENV_DIR …"
+    "$py" -m venv "$VENV_DIR"
+
+    echo "==> Installiere Abhängigkeiten (xknx, websockets) …"
+    "$VENV_PYTHON" -m pip install --upgrade pip --quiet
+    "$VENV_PYTHON" -m pip install xknx websockets --quiet
+    echo ""
+    echo "Fertig! Proxy starten mit:"
+    echo "  ./knx_proxy --server-url \"wss://host/ws/remote-gateway?token=TOKEN\" --knx-ip 192.168.1.100"
+}
+
+# ── Venv-Prüfung ──────────────────────────────────────────────────────────────
+_check_venv() {
+    if [[ ! -f "$VENV_PYTHON" ]]; then
+        echo "Fehler: Virtuelle Umgebung nicht gefunden."
+        echo "Bitte zuerst ausführen:  ./knx_proxy setup"
+        exit 1
+    fi
+}
+
+# ── Proxy starten ─────────────────────────────────────────────────────────────
+cmd_start() {
+    _check_venv
+
+    # proxy_config.json anzeigen wenn vorhanden
+    if [[ -f "$PROXY_CFG" ]]; then
+        echo "Konfiguration aus proxy_config.json:"
+        "$VENV_PYTHON" - "$PROXY_CFG" <<'EOF'
+import json, sys
+d = json.load(open(sys.argv[1]))
+for k, v in d.items():
+    if k != 'ssl_no_verify' or v:
+        print(f"  {k}: {v}")
+EOF
+    fi
+
+    # Ohne Argumente und ohne Config: Hilfe anzeigen
+    if [[ $# -eq 0 && ! -f "$PROXY_CFG" ]]; then
+        echo ""
+        echo "Verwendung: ./knx_proxy [OPTIONEN]"
+        echo ""
+        echo "  --server-url URL    WebSocket-URL des Servers inkl. Token"
+        echo "  --knx-ip IP         IP-Adresse des lokalen KNX/IP-Gateways"
+        echo "  --knx-port PORT     KNX-Port (Standard: 3671)"
+        echo "  --knx-type ip|usb   Verbindungstyp (Standard: ip)"
+        echo "  --ssl-no-verify     TLS-Zertifikat nicht prüfen (nur für Tests)"
+        echo ""
+        echo "Alternativ: proxy_config.json im selben Verzeichnis anlegen:"
+        echo '  {"server_url":"wss://...","knx_ip":"192.168.1.100"}'
+        echo ""
+        echo "Venv neu einrichten:  ./knx_proxy setup"
+        exit 0
+    fi
+
+    echo "Starte KNX Gateway Proxy …"
+    exec "$VENV_PYTHON" "$PROXY_SCRIPT" "$@"
+}
+
+# ── dispatch ──────────────────────────────────────────────────────────────────
+case "${1:-}" in
+    setup) shift; cmd_setup ;;
+    *)           cmd_start "$@" ;;
+esac

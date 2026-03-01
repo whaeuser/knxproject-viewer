@@ -68,6 +68,23 @@ def save_config(cfg: dict):
     CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
 
 
+def _build_dpt1_lookup() -> dict[str, str]:
+    """Map old xknx enum repr strings (e.g. 'Switch.ON') to 'Ein'/'Aus'."""
+    lookup: dict[str, str] = {}
+    for sub in range(0, 30):
+        try:
+            t = DPTBase.parse_transcoder({"main": 1, "sub": sub})
+            for bit in (0, 1):
+                r = t.from_knx(DPTBinary(bit))
+                lookup[str(r)] = "Ein" if bit else "Aus"
+        except Exception:
+            pass
+    return lookup
+
+
+_DPT1_LEGACY: dict[str, str] = _build_dpt1_lookup()
+
+
 def setup_log():
     LOG_PATH.parent.mkdir(exist_ok=True)
     handler = TimedRotatingFileHandler(
@@ -225,6 +242,7 @@ def load_log_into_buffer():
             parts = line.strip().split(" | ")
             if len(parts) == 6:
                 ts, src, device, ga, ga_name, value = parts
+                value = _DPT1_LEGACY.get(value, value)
                 entry = {
                     "type": "telegram",
                     "ts": ts, "src": src, "device": device,

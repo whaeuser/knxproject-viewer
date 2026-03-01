@@ -336,6 +336,44 @@
             </div>
           </template>
 
+          <!-- ETS Zertifikate -->
+          <template x-if="project?._security?.ets_certificates?.length > 0">
+            <div class="mt-5">
+              <h3 class="text-sm font-semibold text-gray-500 uppercase mb-2 px-1">ETS Lizenzzertifikat</h3>
+              <template x-for="(cert, i) in project._security.ets_certificates" :key="i">
+                <div class="bg-white rounded-xl shadow overflow-hidden mb-3">
+                  <table class="w-full text-sm">
+                    <tbody>
+                      <template x-for="[label, field, secret] in [
+                        ['Kunde',        'CUSTOMER',  false],
+                        ['Lizenznummer', 'NUMBER',    false],
+                        ['Lizenztyp',    'LICENSE',   false],
+                        ['Datum',        'DATE',      false],
+                        ['Public Key',   'PUBLICKEY', true],
+                        ['Root Cert',    'ROOTCERT',  true],
+                        ['Signatur',     'SIGN',      true],
+                      ]" :key="field">
+                        <template x-if="cert[field] != null">
+                          <tr class="border-t first:border-t-0 hover:bg-gray-50">
+                            <td class="px-4 py-3 font-medium text-gray-600 w-1/4" x-text="label"></td>
+                            <td class="px-4 py-3 font-mono text-xs break-all">
+                              <template x-if="!secret || showSecrets">
+                                <span :class="secret ? 'text-purple-700' : 'text-gray-800'" x-text="cert[field]"></span>
+                              </template>
+                              <template x-if="secret && !showSecrets">
+                                <span class="text-gray-300 tracking-widest select-none">••••••••••••</span>
+                              </template>
+                            </td>
+                          </tr>
+                        </template>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+              </template>
+            </div>
+          </template>
+
         </div>
       </template>
     </div>

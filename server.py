@@ -733,11 +733,21 @@ async def llm_analyze(data: dict):
     return StreamingResponse(stream_llm(), media_type="text/event-stream")
 
 
+def _parse_ets_certificate(raw: str) -> dict:
+    """Parse ETS Cloud License certificate format into a dict."""
+    import re
+    fields = {}
+    for m in re.finditer(r'(\w+)=(?:"([^"]*)"|([\w+/=]+))', raw):
+        fields[m.group(1)] = m.group(2) if m.group(2) is not None else m.group(3)
+    return fields
+
+
 def _extract_security_data(tmp_path: str, password: str, project: dict) -> dict:
-    """Parse KNX Security data (device keys/passwords, GA keys) from raw project XML."""
+    """Parse KNX Security data (device keys/passwords, GA keys, ETS cert) from raw project XML."""
     import re
     import xml.etree.ElementTree as ET
-    result: dict = {"devices": [], "ga_keys": {}}
+    import zipfile
+    result: dict = {"devices": [], "ga_keys": {}, "ets_certificates": []}
     try:
         with knxproj_extract(tmp_path, password or None) as content:
             f = content.open_project_0()
@@ -786,6 +796,15 @@ def _extract_security_data(tmp_path: str, password: str, project: dict) -> dict:
                 raw_int = None
             formatted = raw_to_addr.get(raw_int, raw or "")
             result["ga_keys"][formatted] = key
+
+        # ── ETS certificates ─────────────────────────────────────────────────
+        with zipfile.ZipFile(tmp_path) as zf:
+            for name in zf.namelist():
+                if name.endswith(".certificate"):
+                    raw = zf.read(name).decode("utf-8", errors="replace")
+                    cert = _parse_ets_certificate(raw)
+                    if cert:
+                        result["ets_certificates"].append(cert)
 
     except Exception as exc:
         logging.getLogger("knx_bus").warning("Security data extraction failed: %s", exc)

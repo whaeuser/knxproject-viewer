@@ -903,7 +903,7 @@
               <template x-for="co in group.cos" :key="co._key">
                 <tr x-show="coSearch || expandedCODevices.has(group.addr)"
                   @click="navigateToGA(co)"
-                  :title="'Zu Gruppenadresse springen: ' + (co.group_address_links ?? []).join(', ')"
+                  :title="coGATooltip(co)"
                   :class="co._key === highlightedCO ? 'border-t bg-yellow-100 ring-1 ring-yellow-400' : 'border-t hover:bg-blue-50 cursor-pointer'">
                   <td class="px-4 py-3 font-mono text-xs" x-text="co.number"></td>
                   <td class="px-4 py-3" x-text="co.name"></td>
@@ -2387,6 +2387,23 @@ function app() {
 
     get allGAs() {
       return Object.values(this.project?.group_addresses ?? {});
+    },
+
+    get gaByAddress() {
+      const map = {};
+      for (const ga of this.allGAs) map[ga.address] = ga;
+      return map;
+    },
+
+    coGATooltip(co) {
+      const links = co.group_address_links ?? [];
+      if (!links.length) return '';
+      const map = this.gaByAddress;
+      return links.map(addr => {
+        const ga = map[addr];
+        if (!ga) return addr;
+        return ga.description ? `${addr}  ${ga.name}\n${ga.description}` : `${addr}  ${ga.name}`;
+      }).join('\n\n');
     },
 
     get filteredGAs() {

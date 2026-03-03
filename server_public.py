@@ -30,6 +30,9 @@ ACCESS_LOG = Path(__file__).parent / "logs" / "access_public.log"
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
+# IPs, die nicht ins Access-Log geschrieben werden (z.B. Monitoring)
+ACCESS_LOG_SKIP_IPS = {"172.18.0.1"}
+
 # ── Access-Logger ─────────────────────────────────────────────────────────────
 ACCESS_LOG.parent.mkdir(exist_ok=True)
 _access_handler = TimedRotatingFileHandler(
@@ -71,6 +74,8 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         duration = time.monotonic() - start
         ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "-").split(",")[0].strip()
+        if ip in ACCESS_LOG_SKIP_IPS:
+            return response
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         access_log.info("%s | %s | %s | %s | %s | %.3fs",
                         ts, ip, request.method, request.url.path,

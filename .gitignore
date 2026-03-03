@@ -9,3 +9,4 @@ config.json
 .venv/
 .venv-proxy/
 *.knxproj
+*_decrypted.xml

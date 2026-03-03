@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from xknxproject import XKNXProj
 from xknxproject.exceptions import InvalidPasswordException, XknxProjectException
+from xknxproject.zip.extractor import extract as knxproj_extract
 
 INDEX_HTML = Path(__file__).parent / "index.html"
 DEMO_PATH = Path(__file__).parent / "demo.knxproj"
@@ -21,6 +22,78 @@ DEMO_PATH = Path(__file__).parent / "demo.knxproj"
 app = FastAPI(title="Open-KNXViewer (Public)")
 
 _demo_cache = None
+
+
+def _parse_ets_certificate(raw: str) -> dict:
+    import re
+    fields = {}
+    for m in re.finditer(r'(\w+)=(?:"([^"]*)"|([\w+/=]+))', raw):
+        fields[m.group(1)] = m.group(2) if m.group(2) is not None else m.group(3)
+    return fields
+
+
+def _extract_security_data(tmp_path: str, password: str, project: dict) -> dict:
+    import re
+    import xml.etree.ElementTree as ET
+    import zipfile
+    result: dict = {"devices": [], "ga_keys": {}, "ets_certificates": []}
+    try:
+        with knxproj_extract(tmp_path, password or None) as content:
+            f = content.open_project_0()
+            xml_str = f.read().decode("utf-8")
+
+        ns_match = re.search(r'xmlns="([^"]+)"', xml_str)
+        ns = ns_match.group(1) if ns_match else "http://knx.org/xml/project/21"
+        root = ET.fromstring(xml_str)
+
+        raw_to_addr: dict[int, str] = {
+            ga["raw_address"]: ga["address"]
+            for ga in project.get("group_addresses", {}).values()
+        }
+
+        for area in root.iter(f"{{{ns}}}Area"):
+            area_addr = area.get("Address", "0")
+            for line in area.iter(f"{{{ns}}}Line"):
+                line_addr = line.get("Address", "0")
+                for dev in line.iter(f"{{{ns}}}DeviceInstance"):
+                    sec = dev.find(f"{{{ns}}}Security")
+                    if sec is None:
+                        continue
+                    dev_addr = dev.get("Address", "0")
+                    ia = f"{area_addr}.{line_addr}.{dev_addr}"
+                    dev_info = project.get("devices", {}).get(ia, {})
+                    result["devices"].append({
+                        "address": ia,
+                        "name": dev_info.get("name") or dev.get("Name") or "",
+                        "tool_key": sec.get("ToolKey"),
+                        "device_auth_code": sec.get("DeviceAuthenticationCode"),
+                        "device_mgmt_password": sec.get("DeviceManagementPassword"),
+                        "sequence_number": sec.get("SequenceNumber"),
+                    })
+
+        for ga_el in root.iter(f"{{{ns}}}GroupAddress"):
+            key = ga_el.get("Key")
+            if not key:
+                continue
+            raw = ga_el.get("Address")
+            try:
+                raw_int = int(raw) if raw is not None else None
+            except ValueError:
+                raw_int = None
+            formatted = raw_to_addr.get(raw_int, raw or "")
+            result["ga_keys"][formatted] = key
+
+        with zipfile.ZipFile(tmp_path) as zf:
+            for name in zf.namelist():
+                if name.endswith(".certificate"):
+                    raw = zf.read(name).decode("utf-8", errors="replace")
+                    cert = _parse_ets_certificate(raw)
+                    if cert:
+                        result["ets_certificates"].append(cert)
+
+    except Exception:
+        pass
+    return result
 
 
 @app.get("/.well-known/appspecific/com.chrome.devtools.json", include_in_schema=False)
@@ -75,6 +148,7 @@ async def parse_project(
             kwargs["language"] = language
 
         project = XKNXProj(**kwargs).parse()
+        project["_security"] = _extract_security_data(tmp_path, password, project)
         return JSONResponse(content=project)
     except InvalidPasswordException as exc:
         raise HTTPException(status_code=422, detail=f"Invalid password: {exc}") from exc

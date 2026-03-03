@@ -421,9 +421,14 @@ cmd_stats() {
         exit 1
     fi
 
+    # Normalisiere Leerzeichen um '|' (alte Einträge hatten Padding-Spaces)
+    local tmpfile
+    tmpfile=$(mktemp)
+    sed 's/ *| */|/g' "$log_file" > "$tmpfile"
+
     local goaccess_args=(
-        "$log_file"
-        --log-format="%d %t | %h | %m | %U | %s | %^"
+        "$tmpfile"
+        --log-format="%d %t|%h|%m|%U|%s|%^"
         --date-format="%Y-%m-%d"
         --time-format="%H:%M:%S"
         --invalid-requests=/dev/null
@@ -432,9 +437,11 @@ cmd_stats() {
 
     if $html; then
         goaccess "${goaccess_args[@]}" --output="$output"
+        rm -f "$tmpfile"
         echo "Bericht gespeichert: $output"
     else
         goaccess "${goaccess_args[@]}"
+        rm -f "$tmpfile"
     fi
 }
 

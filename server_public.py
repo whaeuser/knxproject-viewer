@@ -62,13 +62,22 @@ def _extract_security_data(tmp_path: str, password: str, project: dict) -> dict:
                     dev_addr = dev.get("Address", "0")
                     ia = f"{area_addr}.{line_addr}.{dev_addr}"
                     dev_info = project.get("devices", {}).get(ia, {})
+                    ip_cfg = dev.find(f"{{{ns}}}IPConfig")
+                    bus_ifaces = []
+                    for bi in dev.iter(f"{{{ns}}}BusInterface"):
+                        pwd = bi.get("Password")
+                        if pwd:
+                            bus_ifaces.append({"ref_id": bi.get("RefId", ""), "password": pwd})
                     result["devices"].append({
                         "address": ia,
                         "name": dev_info.get("name") or dev.get("Name") or "",
+                        "ip_address": ip_cfg.get("IPAddress") if ip_cfg is not None else None,
+                        "mac_address": ip_cfg.get("MACAddress") if ip_cfg is not None else None,
                         "tool_key": sec.get("ToolKey"),
                         "device_auth_code": sec.get("DeviceAuthenticationCode"),
                         "device_mgmt_password": sec.get("DeviceManagementPassword"),
                         "sequence_number": sec.get("SequenceNumber"),
+                        "bus_interfaces": bus_ifaces or None,
                     })
 
         for ga_el in root.iter(f"{{{ns}}}GroupAddress"):

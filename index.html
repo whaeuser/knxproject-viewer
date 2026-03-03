@@ -421,6 +421,8 @@
                   <table class="w-full text-sm">
                     <tbody>
                       <template x-for="[field, label, secret] in [
+                        ['ip_address',          'IP-Adresse',          false],
+                        ['mac_address',         'MAC-Adresse',         false],
                         ['tool_key',            'Tool Key',            true],
                         ['device_auth_code',    'Auth Code',           true],
                         ['device_mgmt_password','Management Passwort', true],
@@ -434,6 +436,22 @@
                                 <span :class="secret ? 'text-purple-700' : 'text-gray-800'" x-text="dev[field]"></span>
                               </template>
                               <template x-if="secret && !showSecrets">
+                                <span class="text-gray-300 tracking-widest select-none">••••••••••••</span>
+                              </template>
+                            </td>
+                          </tr>
+                        </template>
+                      </template>
+                      <!-- Bus-Schnittstellen -->
+                      <template x-if="dev.bus_interfaces?.length">
+                        <template x-for="(bi, idx) in dev.bus_interfaces" :key="idx">
+                          <tr class="border-t hover:bg-gray-50">
+                            <td class="px-4 py-3 text-gray-600 text-xs w-40" x-text="`Bus-IF ${idx + 1}`"></td>
+                            <td class="px-4 py-3 font-mono text-xs">
+                              <template x-if="showSecrets">
+                                <span class="text-purple-700" x-text="bi.password"></span>
+                              </template>
+                              <template x-if="!showSecrets">
                                 <span class="text-gray-300 tracking-widest select-none">••••••••••••</span>
                               </template>
                             </td>
@@ -2092,10 +2110,14 @@ function app() {
           lines.push('### Gerätesicherheit', '');
           for (const dev of sec.devices) {
             lines.push(`#### \`${e(dev.address)}\` – ${e(dev.name || '—')}`, '');
+            if (dev.ip_address != null)           lines.push(`- **IP-Adresse:** ${e(dev.ip_address)}`);
+            if (dev.mac_address != null)          lines.push(`- **MAC-Adresse:** ${e(dev.mac_address)}`);
             if (dev.tool_key != null)             lines.push(`- **Tool Key:** \`${e(dev.tool_key)}\``);
             if (dev.device_auth_code != null)     lines.push(`- **Auth Code:** \`${e(dev.device_auth_code)}\``);
             if (dev.device_mgmt_password != null) lines.push(`- **Management Passwort:** \`${e(dev.device_mgmt_password)}\``);
             if (dev.sequence_number != null)      lines.push(`- **Sequenznummer:** ${e(String(dev.sequence_number))}`);
+            for (const [idx, bi] of (dev.bus_interfaces ?? []).entries())
+              lines.push(`- **Bus-IF ${idx + 1}:** \`${e(bi.password)}\``);
             lines.push('');
           }
         }
@@ -2233,10 +2255,14 @@ function app() {
           html += '<h3>Gerätesicherheit</h3>';
           for (const dev of sec.devices) {
             html += `<h4><span class="mono">${esc(dev.address)}</span> – ${esc(dev.name || '—')}</h4><dl>`;
+            if (dev.ip_address != null)           html += `<dt>IP-Adresse</dt><dd class="mono">${esc(dev.ip_address)}</dd>`;
+            if (dev.mac_address != null)          html += `<dt>MAC-Adresse</dt><dd class="mono">${esc(dev.mac_address)}</dd>`;
             if (dev.tool_key != null)             html += `<dt>Tool Key</dt><dd class="mono">${esc(dev.tool_key)}</dd>`;
             if (dev.device_auth_code != null)     html += `<dt>Auth Code</dt><dd class="mono">${esc(dev.device_auth_code)}</dd>`;
             if (dev.device_mgmt_password != null) html += `<dt>Management Passwort</dt><dd class="mono">${esc(dev.device_mgmt_password)}</dd>`;
             if (dev.sequence_number != null)      html += `<dt>Sequenznummer</dt><dd class="mono">${esc(String(dev.sequence_number))}</dd>`;
+            for (const [idx, bi] of (dev.bus_interfaces ?? []).entries())
+              html += `<dt>Bus-IF ${idx + 1}</dt><dd class="mono">${esc(bi.password)}</dd>`;
             html += '</dl>';
           }
         }

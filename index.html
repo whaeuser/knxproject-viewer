@@ -367,7 +367,7 @@
                             x-text="ga.dpt ? (ga.dpt.main + (ga.dpt.sub != null ? '.' + String(ga.dpt.sub).padStart(3,'0') : '')) : '—'"></td>
                         <td class="px-4 py-3 text-gray-600 text-xs" x-text="ga.description || '—'"></td>
                         <td x-show="showSecrets" class="px-4 py-3 font-mono text-xs text-purple-700"
-                            x-text="project?._security?.ga_keys?.[ga.address] || '—'"></td>
+                            x-text="_b64ToHex(project?._security?.ga_keys?.[ga.address]) || '—'"></td>
                       </tr>
                     </template>
                   </tbody>
@@ -396,7 +396,7 @@
                         <tr class="border-t hover:bg-gray-50">
                           <td class="px-4 py-3 font-mono text-xs font-semibold" x-text="addr"></td>
                           <td class="px-4 py-3 text-sm" x-text="project?.group_addresses?.[addr]?.name || '—'"></td>
-                          <td class="px-4 py-3 font-mono text-xs text-purple-700" x-text="key"></td>
+                          <td class="px-4 py-3 font-mono text-xs text-purple-700" x-text="_b64ToHex(key)"></td>
                           <td class="px-4 py-3 text-xs text-gray-400">Nein</td>
                         </tr>
                       </template>
@@ -420,20 +420,21 @@
                   </div>
                   <table class="w-full text-sm">
                     <tbody>
-                      <template x-for="[field, label, secret] in [
-                        ['ip_address',          'IP-Adresse',          false],
-                        ['mac_address',         'MAC-Adresse',         false],
-                        ['tool_key',            'Tool Key',            true],
-                        ['device_auth_code',    'Auth Code',           true],
-                        ['device_mgmt_password','Management Passwort', true],
-                        ['sequence_number',     'Sequenznummer',       false],
+                      <template x-for="[field, label, secret, hex] in [
+                        ['ip_address',          'IP-Adresse',          false, false],
+                        ['mac_address',         'MAC-Adresse',         false, false],
+                        ['tool_key',            'Tool Key',            true,  true],
+                        ['device_auth_code',    'Auth Code',           true,  false],
+                        ['device_mgmt_password','Management Passwort', true,  false],
+                        ['sequence_number',     'Sequenznummer',       false, false],
                       ]" :key="field">
                         <template x-if="dev[field] != null">
                           <tr class="border-t hover:bg-gray-50">
                             <td class="px-4 py-3 text-gray-600 text-xs w-40" x-text="label"></td>
                             <td class="px-4 py-3 font-mono text-xs">
                               <template x-if="!secret || showSecrets">
-                                <span :class="secret ? 'text-purple-700' : 'text-gray-800'" x-text="dev[field]"></span>
+                                <span :class="secret ? 'text-purple-700' : 'text-gray-800'"
+                                      x-text="hex ? _b64ToHex(dev[field]) : dev[field]"></span>
                               </template>
                               <template x-if="secret && !showSecrets">
                                 <span class="text-gray-300 tracking-widest select-none">••••••••••••</span>
@@ -474,20 +475,21 @@
                   <table class="w-full text-sm">
                     <tbody>
                       <template x-for="[label, field, secret] in [
-                        ['Kunde',        'CUSTOMER',  false],
-                        ['Lizenznummer', 'NUMBER',    false],
-                        ['Lizenztyp',    'LICENSE',   false],
-                        ['Datum',        'DATE',      false],
-                        ['Public Key',   'PUBLICKEY', true],
-                        ['Root Cert',    'ROOTCERT',  true],
-                        ['Signatur',     'SIGN',      true],
+                        ['Kunde',        'CUSTOMER',  false, false],
+                        ['Lizenznummer', 'NUMBER',    false, false],
+                        ['Lizenztyp',    'LICENSE',   false, false],
+                        ['Datum',        'DATE',      false, false],
+                        ['Public Key',   'PUBLICKEY', true,  true],
+                        ['Root Cert',    'ROOTCERT',  true,  true],
+                        ['Signatur',     'SIGN',      true,  true],
                       ]" :key="field">
                         <template x-if="cert[field] != null">
                           <tr class="border-t first:border-t-0 hover:bg-gray-50">
                             <td class="px-4 py-3 font-medium text-gray-600 w-1/4" x-text="label"></td>
                             <td class="px-4 py-3 font-mono text-xs break-all">
                               <template x-if="!secret || showSecrets">
-                                <span :class="secret ? 'text-purple-700' : 'text-gray-800'" x-text="cert[field]"></span>
+                                <span :class="secret ? 'text-purple-700' : 'text-gray-800'"
+                                      x-text="hex ? _b64ToHex(cert[field]) : cert[field]"></span>
                               </template>
                               <template x-if="secret && !showSecrets">
                                 <span class="text-gray-300 tracking-widest select-none">••••••••••••</span>
@@ -2016,6 +2018,14 @@ function app() {
       this.coSearch = '';
     },
 
+    _b64ToHex(s) {
+      if (!s) return s;
+      try {
+        const bin = atob(s);
+        return Array.from(bin).map(c => c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase()).join(' ');
+      } catch { return s; }
+    },
+
     _mdEsc(s) {
       return String(s ?? '').replace(/\|/g, '\\|').replace(/[\r\n]+/g, ' ');
     },
@@ -2112,7 +2122,7 @@ function app() {
             lines.push(`#### \`${e(dev.address)}\` – ${e(dev.name || '—')}`, '');
             if (dev.ip_address != null)           lines.push(`- **IP-Adresse:** ${e(dev.ip_address)}`);
             if (dev.mac_address != null)          lines.push(`- **MAC-Adresse:** ${e(dev.mac_address)}`);
-            if (dev.tool_key != null)             lines.push(`- **Tool Key:** \`${e(dev.tool_key)}\``);
+            if (dev.tool_key != null)             lines.push(`- **Tool Key:** \`${e(this._b64ToHex(dev.tool_key))}\``);
             if (dev.device_auth_code != null)     lines.push(`- **Auth Code:** \`${e(dev.device_auth_code)}\``);
             if (dev.device_mgmt_password != null) lines.push(`- **Management Passwort:** \`${e(dev.device_mgmt_password)}\``);
             if (dev.sequence_number != null)      lines.push(`- **Sequenznummer:** ${e(String(dev.sequence_number))}`);
@@ -2128,15 +2138,15 @@ function app() {
           lines.push('| GA | Schlüssel |');
           lines.push('|----|-----------|');
           for (const [ga, key] of gaKeys)
-            lines.push(`| \`${e(ga)}\` | \`${e(key)}\` |`);
+            lines.push(`| \`${e(ga)}\` | \`${e(this._b64ToHex(key))}\` |`);
           lines.push('');
         }
 
         if (!this.publicMode && sec.ets_certificates?.length) {
           lines.push('### ETS Lizenzzertifikat', '');
           for (const cert of sec.ets_certificates) {
-            for (const [label, field] of [['Kunde','CUSTOMER'],['Lizenznummer','NUMBER'],['Lizenztyp','LICENSE'],['Datum','DATE'],['Public Key','PUBLICKEY'],['Root Cert','ROOTCERT'],['Signatur','SIGN']])
-              if (cert[field] != null) lines.push(`- **${label}:** \`${e(cert[field])}\``);
+            for (const [label, field, hex] of [['Kunde','CUSTOMER',false],['Lizenznummer','NUMBER',false],['Lizenztyp','LICENSE',false],['Datum','DATE',false],['Public Key','PUBLICKEY',true],['Root Cert','ROOTCERT',true],['Signatur','SIGN',true]])
+              if (cert[field] != null) lines.push(`- **${label}:** \`${e(hex ? this._b64ToHex(cert[field]) : cert[field])}\``);
             lines.push('');
           }
         }
@@ -2257,7 +2267,7 @@ function app() {
             html += `<h4><span class="mono">${esc(dev.address)}</span> – ${esc(dev.name || '—')}</h4><dl>`;
             if (dev.ip_address != null)           html += `<dt>IP-Adresse</dt><dd class="mono">${esc(dev.ip_address)}</dd>`;
             if (dev.mac_address != null)          html += `<dt>MAC-Adresse</dt><dd class="mono">${esc(dev.mac_address)}</dd>`;
-            if (dev.tool_key != null)             html += `<dt>Tool Key</dt><dd class="mono">${esc(dev.tool_key)}</dd>`;
+            if (dev.tool_key != null)             html += `<dt>Tool Key</dt><dd class="mono">${esc(this._b64ToHex(dev.tool_key))}</dd>`;
             if (dev.device_auth_code != null)     html += `<dt>Auth Code</dt><dd class="mono">${esc(dev.device_auth_code)}</dd>`;
             if (dev.device_mgmt_password != null) html += `<dt>Management Passwort</dt><dd class="mono">${esc(dev.device_mgmt_password)}</dd>`;
             if (dev.sequence_number != null)      html += `<dt>Sequenznummer</dt><dd class="mono">${esc(String(dev.sequence_number))}</dd>`;
@@ -2271,7 +2281,7 @@ function app() {
         if (gaKeys.length) {
           html += '<h3>Gruppen-Schlüssel</h3><table><thead><tr><th>GA</th><th>Schlüssel</th></tr></thead><tbody>';
           for (const [ga, key] of gaKeys)
-            html += `<tr><td class="mono">${esc(ga)}</td><td class="mono">${esc(key)}</td></tr>`;
+            html += `<tr><td class="mono">${esc(ga)}</td><td class="mono">${esc(this._b64ToHex(key))}</td></tr>`;
           html += '</tbody></table>';
         }
 
@@ -2279,8 +2289,8 @@ function app() {
           html += '<h3>ETS Lizenzzertifikat</h3>';
           for (const cert of sec.ets_certificates) {
             html += '<dl>';
-            for (const [label, field] of [['Kunde','CUSTOMER'],['Lizenznummer','NUMBER'],['Lizenztyp','LICENSE'],['Datum','DATE'],['Public Key','PUBLICKEY'],['Root Cert','ROOTCERT'],['Signatur','SIGN']])
-              if (cert[field] != null) html += `<dt>${esc(label)}</dt><dd class="mono">${esc(cert[field])}</dd>`;
+            for (const [label, field, hex] of [['Kunde','CUSTOMER',false],['Lizenznummer','NUMBER',false],['Lizenztyp','LICENSE',false],['Datum','DATE',false],['Public Key','PUBLICKEY',true],['Root Cert','ROOTCERT',true],['Signatur','SIGN',true]])
+              if (cert[field] != null) html += `<dt>${esc(label)}</dt><dd class="mono">${esc(hex ? this._b64ToHex(cert[field]) : cert[field])}</dd>`;
             html += '</dl>';
           }
         }

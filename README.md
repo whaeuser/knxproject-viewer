@@ -18,25 +18,40 @@ Web UI for uploading, analysing and documenting `.knxproj` files – with an opt
 - Upload `.knxproj` file (drag & drop or file picker), optional password support
 - **Info** – project metadata
 - **Devices** – searchable table; expandable communication object list per device
-- **Group Addresses** – searchable; DPT, description, linked COs
+- **Group Addresses** – searchable; DPT, description, linked COs; last live value shown per GA
 - **Topology** – area → line → devices (collapsible)
-- **Locations** – building → floor → room → functions (collapsible)
 - **Communication Objects** – all COs of all devices, searchable, grouped by device
 - **Functions** – only shown when the project contains at least one function
+- **KNX Security** – device keys, authentication codes, management passwords, GA keys; ETS license certificate (private server only)
 - Cross-tab navigation: CO → GA, GA → CO, device → COs
 - DPT and flags tooltips (100+ types)
-- Export as Markdown or PDF
+- Export as Markdown or PDF (including KNX Security data)
 
 ### Live Bus Monitor (private server only, port 8002)
-- Real-time telegrams via WebSocket
+- Real-time telegrams via WebSocket with APCI type badges (Write / Read / Response)
 - **DPT-aware decoding**: values with unit (`21.34 °C`, `75 %`, `On/Off`) when a project file is loaded
+- **DPT estimation** without project file (based on payload length)
 - Value cell tooltip shows DPT type and raw value, e.g. `DPT: 9.001 | Raw: DPTArray((0x0c, 0x1a))`
-- **Last value** per group address shown in the GA table
-- Persistent log with daily rotation (`logs/knx_bus.log`, 30 days), CSV export
+- **Write / Read group addresses**: send GroupValueWrite or GroupValueRead directly from the GA table
+- **Read all**: send GroupValueRead for all known GAs with one click
+- Persistent log with daily rotation (`logs/knx_bus.log`, 30 days)
 - **Bus-only mode**: derive devices and GAs from bus telegrams without a project file
 - Inline editing of names and descriptions → saved to `annotations.json`
 - Connection indicator + gateway configuration (IP, port, language) in the browser
 - **Last project file** is saved after parsing and automatically suggested on next start
+
+### Bus Analysis (private server only)
+- **Gateway description**: reads device info from the KNX/IP gateway via UDP (name, PA, medium, serial, MAC, services)
+- **PA Scan**: systematically scans individual addresses on a line for active devices
+- **GA Scan**: systematically scans group address ranges via GroupValueRead
+- **Device Properties**: reads PID properties from individual devices via P2P connection
+- **Programming mode detection**: lists all devices currently in programming mode (red LED)
+
+### AI Analysis (private server only)
+- **KI-Analyse tab**: analyses the loaded project with a configurable LLM via OpenRouter
+- Streaming response with visible reasoning process (collapsible)
+- Export analysis as Markdown
+- API key and model configurable in the gateway settings
 
 ---
 
@@ -111,7 +126,12 @@ The frontend detects the mode automatically via `GET /api/mode`:
 | | Private (port 8002) | Public (port 8004) |
 |---|---|---|
 | Project Viewer | ✓ | ✓ |
+| KNX Security (devices, GA keys) | ✓ | ✓ |
+| ETS License Certificate | ✓ | — |
 | Bus Monitor tab | ✓ | — |
+| GA Write / Read | ✓ | — |
+| Bus Scan / PA Scan | ✓ | — |
+| AI Analysis tab | ✓ | — |
 | Last value (GA tab) | ✓ | — |
 | Gateway configuration | ✓ | — |
 | WebSocket | ✓ | — |
@@ -125,6 +145,7 @@ The frontend detects the mode automatically via `GET /api/mode`:
 Via the ⚙ button in the top right (private server only):
 - KNX/IP gateway IP address and port
 - Language for `.knxproj` parsing (`de-DE` default, `en-US` available)
+- OpenRouter API key and model for AI analysis
 
 Saved to `config.json`, loaded automatically on server start.
 Can also be set via CLI: `./openknxviewer gateway --ip X.X.X.X`
@@ -141,7 +162,7 @@ openknxviewer/
 ├── requirements.txt             # Python dependencies
 ├── openknxviewer                # CLI tool (macOS/Linux)
 ├── openknxviewer.bat            # CLI tool (Windows)
-├── config.json                  # Gateway IP, port, language (auto-generated)
+├── config.json                  # Gateway IP, port, language, API key (auto-generated)
 ├── annotations.json             # Inline annotations (auto-generated)
 ├── last_project.json            # Last parsed project as JSON (auto-generated)
 └── logs/

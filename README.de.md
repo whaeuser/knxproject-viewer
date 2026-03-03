@@ -18,25 +18,40 @@ Web-UI zum Hochladen, Analysieren und Dokumentieren von `.knxproj`-Dateien – m
 - `.knxproj`-Datei hochladen (drag & drop oder Dateiauswahl), optional mit Passwort
 - **Info** – Projektmetadaten
 - **Geräte** – durchsuchbare Tabelle; aufklappbare KO-Liste pro Gerät
-- **Gruppenadressen** – durchsuchbar; DPT, Beschreibung, verknüpfte KOs
+- **Gruppenadressen** – durchsuchbar; DPT, Beschreibung, verknüpfte KOs; letzter Live-Wert pro GA
 - **Topologie** – Bereich → Linie → Geräte (aufklappbar)
-- **Standorte** – Gebäude → Stockwerk → Raum → Funktionen (aufklappbar)
 - **Kommunikationsobjekte** – alle KOs aller Geräte, durchsuchbar, nach Gerät gruppiert
 - **Funktionen** – nur sichtbar wenn Projekt Funktionen enthält
+- **KNX Security** – Geräteschlüssel, Auth-Codes, Management-Passwörter, GA-Schlüssel; ETS-Lizenzzertifikat (nur privater Server)
 - Cross-Tab-Navigation: KO → GA, GA → KO, Gerät → KOs
 - DPT- und Flags-Tooltips (100+ Typen)
-- Export als Markdown oder PDF
+- Export als Markdown oder PDF (inkl. KNX-Security-Daten)
 
 ### Live Bus-Monitor (nur privater Server, Port 8002)
-- Echtzeit-Telegramme via WebSocket
+- Echtzeit-Telegramme via WebSocket mit APCI-Typ-Badges (Write / Read / Response)
 - **DPT-aware Dekodierung**: Werte mit Einheit (`21.34 °C`, `75 %`, `Ein/Aus`) wenn Projektdatei geladen
+- **DPT-Schätzung** ohne Projektdatei (anhand der Payload-Länge)
 - Tooltip auf dem Wert zeigt DPT-Typ und Rohwert, z.B. `DPT: 9.001 | Raw: DPTArray((0x0c, 0x1a))`
-- **Letzter Wert** pro Gruppenadresse in der GA-Tabelle
-- Persistentes Log mit täglicher Rotation (`logs/knx_bus.log`, 30 Tage), CSV-Export
+- **Gruppenadressen schreiben / lesen**: GroupValueWrite oder GroupValueRead direkt aus der GA-Tabelle senden
+- **Alle lesen**: GroupValueRead für alle bekannten GAs mit einem Klick senden
+- Persistentes Log mit täglicher Rotation (`logs/knx_bus.log`, 30 Tage)
 - **Bus-only-Modus**: Geräte und GAs aus Bus-Telegrammen ableiten ohne Projektdatei
 - Inline-Editierung von Namen und Beschreibungen → gespeichert in `annotations.json`
 - Verbindungsindikator + Gateway-Konfiguration (IP, Port, Sprache) im Browser
 - **Letzte Projektdatei** wird nach dem Parsen gespeichert und beim nächsten Start automatisch vorgeschlagen
+
+### Bus-Analyse (nur privater Server)
+- **Gateway-Beschreibung**: liest Geräteinformationen vom KNX/IP-Gateway per UDP aus (Name, PA, Medium, Serial, MAC, Services)
+- **PA-Scan**: systematischer Scan von Individualadressen auf einer Linie nach aktiven Geräten
+- **GA-Scan**: systematischer Scan von Gruppenadressbereichen per GroupValueRead
+- **Geräteeigenschaften**: liest PID-Properties von einzelnen Geräten per P2P-Verbindung aus
+- **Koppelmodus-Erkennung**: listet alle Geräte auf, die sich aktuell im Koppelmodus befinden (rote LED)
+
+### KI-Analyse (nur privater Server)
+- **KI-Analyse-Tab**: analysiert das geladene Projekt mit einem konfigurierbaren LLM über OpenRouter
+- Streaming-Antwort mit sichtbarem Denkprozess (aufklappbar)
+- Analyse als Markdown exportieren
+- API-Key und Modell im Gateway-Einstellungen konfigurierbar
 
 ---
 
@@ -111,7 +126,12 @@ Das Frontend erkennt automatisch den Modus über `GET /api/mode`:
 | | Privat (Port 8002) | Öffentlich (Port 8004) |
 |---|---|---|
 | Projektbetrachter | ✓ | ✓ |
+| KNX Security (Geräte, GA-Schlüssel) | ✓ | ✓ |
+| ETS-Lizenzzertifikat | ✓ | — |
 | Bus-Monitor Tab | ✓ | — |
+| GA schreiben / lesen | ✓ | — |
+| Bus-Scan / PA-Scan | ✓ | — |
+| KI-Analyse Tab | ✓ | — |
 | Letzter Wert (GA-Tab) | ✓ | — |
 | Gateway-Konfiguration | ✓ | — |
 | WebSocket | ✓ | — |
@@ -125,6 +145,7 @@ Das Frontend erkennt automatisch den Modus über `GET /api/mode`:
 Im ⚙-Button oben rechts (nur privater Server):
 - KNX/IP Gateway IP-Adresse und Port
 - Sprache für `.knxproj`-Parsing (`de-DE` Standard, `en-US` möglich)
+- OpenRouter-API-Key und Modell für die KI-Analyse
 
 Gespeichert in `config.json`, automatisch beim Serverstart geladen.
 Alternativ per CLI: `./openknxviewer gateway --ip X.X.X.X`
@@ -141,7 +162,7 @@ openknxviewer/
 ├── requirements.txt             # Python-Abhängigkeiten
 ├── openknxviewer                # CLI-Tool (macOS/Linux)
 ├── openknxviewer.bat            # CLI-Tool (Windows)
-├── config.json                  # Gateway-IP, Port, Sprache (automatisch)
+├── config.json                  # Gateway-IP, Port, Sprache, API-Key (automatisch)
 ├── annotations.json             # Inline-Annotationen (automatisch erstellt)
 ├── last_project.json            # Letztes geparste Projekt als JSON (automatisch erstellt)
 └── logs/

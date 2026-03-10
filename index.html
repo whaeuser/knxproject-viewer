@@ -13,8 +13,16 @@
 </head>
 <body class="bg-gray-100 min-h-screen" x-data="app()" x-cloak>
 
+<!-- ===== INITIALIZING SPINNER ===== -->
+<div x-show="initializing" class="flex items-center justify-center min-h-screen">
+  <svg class="animate-spin h-8 w-8 text-blue-500" fill="none" viewBox="0 0 24 24">
+    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+  </svg>
+</div>
+
 <!-- ===== UPLOAD PHASE ===== -->
-<div x-show="phase === 'upload'" class="flex min-h-screen">
+<div x-show="!initializing && phase === 'upload'" class="flex min-h-screen">
 
   <!-- Recent projects sidebar -->
   <div x-show="!publicMode && recentProjects.length > 0"
@@ -117,7 +125,7 @@
 </div>
 
 <!-- ===== RESULT PHASE ===== -->
-<div x-show="phase === 'result'" class="flex flex-col min-h-screen">
+<div x-show="!initializing && phase === 'result'" class="flex flex-col min-h-screen">
 
   <!-- Header -->
   <header class="bg-white shadow-sm sticky top-0 z-10">
@@ -1319,6 +1327,7 @@
 function app() {
   return {
     phase: 'upload',
+    initializing: true,
     loading: false,
     error: '',
     selectedFile: null,
@@ -1442,16 +1451,26 @@ function app() {
       if (!this.publicMode) {
         this.connectWebSocket();
         this.loadAnnotations();
-        this.loadLastProjectInfo();
         this.loadRecentProjects();
         this.loadLlmConfig();
         this.loadGatewayInfo();
+        // Auto-restore last project on page refresh
+        try {
+          const res = await fetch('/api/last-project/data');
+          if (res.ok) {
+            this.project = await res.json();
+            this.phase = 'result';
+          } else {
+            this.loadLastProjectInfo();
+          }
+        } catch (_) { this.loadLastProjectInfo(); }
       } else {
         try {
           const res = await fetch('/api/demo/available');
           if (res.ok) this.demoAvailable = (await res.json()).available;
         } catch (_) {}
       }
+      this.initializing = false;
     },
 
     async loadAnnotations() {

@@ -681,6 +681,16 @@ def get_recent_project_data(slug: str):
     if not p.exists():
         raise HTTPException(status_code=404, detail="Not found")
     data = json.loads(p.read_text())
+    # Update server state so DPT decoding works for incoming telegrams
+    state["project_data"] = data
+    state["ga_dpt_map"] = {
+        gad["address"]: gad.get("dpt")
+        for gad in data.get("group_addresses", {}).values()
+        if gad.get("address")
+    }
+    if state["xknx"]:
+        state["xknx"].group_address_dpt.set(state["ga_dpt_map"])
+    # Move to top with updated timestamp
     recent = _load_recent_projects()
     entry = next((r for r in recent if r["slug"] == slug), None)
     if entry:

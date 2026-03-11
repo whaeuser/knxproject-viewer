@@ -52,12 +52,52 @@
              :class="selectedRecentSlug === proj.slug
                ? 'border-blue-500 bg-blue-50'
                : 'border-gray-200 bg-gray-50 hover:border-blue-300 hover:bg-blue-50'"
-             @click="selectedRecentSlug = proj.slug">
-          <!-- Delete button -->
-          <button class="absolute top-2 right-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity text-lg leading-none"
-                  @click.stop="removeRecentProject(proj.slug)"
-                  title="Entfernen">×</button>
-          <div class="font-semibold text-gray-800 text-sm pr-4 truncate" x-text="proj.project_name || proj.filename"></div>
+             @click="selectedRecentSlug = proj.slug"
+             x-data="{ menuOpen: false }">
+          <!-- 3-Punkte-Menü -->
+          <div class="absolute top-2 right-2" @click.stop>
+            <button @click="menuOpen = !menuOpen"
+                    class="text-gray-300 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded hover:bg-gray-200"
+                    title="Aktionen">
+              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zm0 5.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zm0 5.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3z"/>
+              </svg>
+            </button>
+            <div x-show="menuOpen" @click.away="menuOpen = false"
+                 class="absolute right-0 top-7 z-30 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 text-sm">
+              <button @click="menuOpen = false; exportRecentJson(proj)"
+                      class="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+                <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                JSON exportieren
+              </button>
+              <button @click="menuOpen = false; exportRecentXml(proj)"
+                      :class="proj.knxproj_stored ? 'text-gray-700 hover:bg-gray-50' : 'text-gray-300 cursor-not-allowed'"
+                      class="w-full text-left px-4 py-2 flex items-center gap-2">
+                <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                XML exportieren
+              </button>
+              <button @click="menuOpen = false; downloadRecentKnxproj(proj)"
+                      :class="proj.knxproj_stored ? 'text-gray-700 hover:bg-gray-50' : 'text-gray-300 cursor-not-allowed'"
+                      class="w-full text-left px-4 py-2 flex items-center gap-2">
+                <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                .knxproj exportieren
+              </button>
+              <div class="border-t border-gray-100 my-1"></div>
+              <button @click="menuOpen = false; openProjectNotes(proj)"
+                      class="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+                <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                <span>Notizen</span>
+                <span x-show="projectNotes[proj.slug]" class="ml-auto w-2 h-2 rounded-full bg-blue-400 flex-shrink-0"></span>
+              </button>
+              <div class="border-t border-gray-100 my-1"></div>
+              <button @click="menuOpen = false; removeRecentProject(proj.slug)"
+                      class="w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 flex items-center gap-2">
+                <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                Entfernen
+              </button>
+            </div>
+          </div>
+          <div class="font-semibold text-gray-800 text-sm pr-6 truncate" x-text="proj.project_name || proj.filename"></div>
           <div x-show="proj.project_name" class="text-xs text-gray-400 truncate mt-0.5" x-text="proj.filename"></div>
           <div class="text-xs text-gray-500 mt-1.5">
             <span x-text="proj.device_count + ' Geräte'"></span>
@@ -138,6 +178,30 @@
         class="mt-2 w-full text-sm text-gray-500 hover:text-blue-600 py-2 transition-colors">
         Ohne Projektdatei → Nur Bus-Monitor
       </button>
+    </div>
+  </div>
+
+  <!-- Notizen-Modal -->
+  <div x-show="notesModalOpen" x-cloak
+       class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+       @keydown.escape.window="notesModalOpen = false">
+    <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md mx-4" @click.stop>
+      <h3 class="font-semibold text-gray-800 mb-1" x-text="notesModalTitle"></h3>
+      <p class="text-xs text-gray-400 mb-3">Markdown wird unterstützt</p>
+      <textarea x-model="notesModalText"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
+                rows="8"
+                placeholder="Notizen zum Projekt…"></textarea>
+      <div class="flex justify-end gap-2 mt-4">
+        <button @click="notesModalOpen = false"
+                class="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 border border-gray-200 rounded-lg">
+          Abbrechen
+        </button>
+        <button @click="saveProjectNotes()"
+                class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          Speichern
+        </button>
+      </div>
     </div>
   </div>
 </div>
@@ -1592,6 +1656,11 @@ function app() {
     lastProjectFilename: '',
     recentProjects: [],
     selectedRecentSlug: null,
+    projectNotes: {},
+    notesModalOpen: false,
+    notesModalSlug: null,
+    notesModalTitle: '',
+    notesModalText: '',
     activeTab: 'info',
     tabs: [
       { id: 'info', label: 'Info' },
@@ -1718,18 +1787,10 @@ function app() {
         this.connectWebSocket();
         this.loadAnnotations();
         this.loadRecentProjects();
+        this.loadProjectNotes();
         this.loadLlmConfig();
         this.loadGatewayInfo();
-        // Auto-restore last project on page refresh
-        try {
-          const res = await fetch('/api/last-project/data');
-          if (res.ok) {
-            this.project = await res.json();
-            this.phase = 'result';
-            this.activeTab = 'info';
-            this.newLlmChat();
-          }
-        } catch (_) {}
+        // Show upload screen — user selects project from sidebar
       } else {
         try {
           const res = await fetch('/api/demo/available');
@@ -2006,6 +2067,13 @@ function app() {
       } catch (_) {}
     },
 
+    async loadProjectNotes() {
+      try {
+        const res = await fetch('/api/recent-projects/notes');
+        if (res.ok) this.projectNotes = await res.json();
+      } catch (_) {}
+    },
+
     async loadSelectedRecentProject() {
       if (!this.selectedRecentSlug) return;
       this.loading = true;
@@ -2031,6 +2099,62 @@ function app() {
         this.recentProjects = this.recentProjects.filter(p => p.slug !== slug);
         if (this.selectedRecentSlug === slug) this.selectedRecentSlug = null;
       } catch (_) {}
+    },
+
+    async exportRecentJson(proj) {
+      try {
+        const res = await fetch(`/api/recent-projects/${proj.slug}/data`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const safe = (proj.project_name || proj.filename).replace(/[^a-zA-Z0-9_\-]/g, '_');
+        this._download(JSON.stringify(data, null, 2), `${safe}.json`, 'application/json');
+      } catch (_) {}
+    },
+
+    downloadRecentKnxproj(proj) {
+      if (!proj.knxproj_stored) {
+        alert('.knxproj nicht verfügbar — bitte Datei erneut hochladen');
+        return;
+      }
+      const a = document.createElement('a');
+      a.href = `/api/recent-projects/${proj.slug}/knxproj`;
+      a.download = proj.filename || `${proj.slug}.knxproj`;
+      a.click();
+    },
+
+    async exportRecentXml(proj) {
+      if (!proj.knxproj_stored) {
+        alert('XML nicht verfügbar — bitte Datei erneut hochladen');
+        return;
+      }
+      try {
+        const res = await fetch(`/api/recent-projects/${proj.slug}/xml`);
+        if (!res.ok) { alert('XML konnte nicht exportiert werden'); return; }
+        const text = await res.text();
+        const safe = (proj.project_name || proj.filename).replace(/[^a-zA-Z0-9_\-]/g, '_').replace(/\.knxproj$/i, '');
+        this._download(text, `${safe}.xml`, 'application/xml;charset=utf-8');
+      } catch (_) {}
+    },
+
+    openProjectNotes(proj) {
+      this.notesModalSlug = proj.slug;
+      this.notesModalTitle = proj.project_name || proj.filename;
+      this.notesModalText = this.projectNotes[proj.slug] || '';
+      this.notesModalOpen = true;
+    },
+
+    async saveProjectNotes() {
+      try {
+        await fetch(`/api/recent-projects/${this.notesModalSlug}/notes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: this.notesModalText }),
+        });
+        this.projectNotes = { ...this.projectNotes, [this.notesModalSlug]: this.notesModalText };
+        this.notesModalOpen = false;
+      } catch (e) {
+        alert('Fehler beim Speichern: ' + e.message);
+      }
     },
 
     formatRecentDate(iso) {
@@ -2232,13 +2356,13 @@ function app() {
           }
         }
         
-        // Add Q&A to history
+        // Add Q&A to history and clear streaming state
         this.llmMessages.push(
           { role: 'user', content: currentQuestion },
           { role: 'assistant', content: this.llmResponse }
         );
-        
-        // Clear input for next question
+        this.llmResponse = '';
+        this.llmReasoning = '';
         this.llmQuestion = '';
         
       } catch (e) {

@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import os
+import shutil
 import socket
 import struct
 import tempfile
@@ -22,11 +23,12 @@ from fastapi import (
     Form,
     HTTPException,
     Query,
+    Request,
     UploadFile,
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 from xknx import XKNX
 from xknx.dpt import DPTArray, DPTBase, DPTBinary
@@ -131,10 +133,17 @@ def _load_recent_projects() -> list:
         return []
 
 
-def _add_to_recent_projects(filename: str, project: dict):
+def _add_to_recent_projects(filename: str, project: dict, source_path: str | None = None):
     PROJECTS_DIR.mkdir(exist_ok=True)
     slug = _project_slug(filename)
     (PROJECTS_DIR / f"{slug}.json").write_text(json.dumps(project))
+    knxproj_stored = False
+    if source_path:
+        try:
+            shutil.copy(source_path, PROJECTS_DIR / f"{slug}.knxproj")
+            knxproj_stored = True
+        except Exception:
+            pass
     meta = {
         "filename": filename,
         "project_name": project.get("info", {}).get("name", ""),
@@ -142,6 +151,7 @@ def _add_to_recent_projects(filename: str, project: dict):
         "device_count": len(project.get("devices", {})),
         "ga_count": len(project.get("group_addresses", {})),
         "slug": slug,
+        "knxproj_stored": knxproj_stored,
     }
     recent = [r for r in _load_recent_projects() if r["filename"] != filename]
     recent = [meta] + recent[: MAX_RECENT_PROJECTS - 1]
@@ -766,6 +776,57 @@ def get_last_project_data():
 @app.get("/api/recent-projects")
 def get_recent_projects():
     return JSONResponse(content=_load_recent_projects())
+
+
+@app.get("/api/recent-projects/notes")
+def get_all_notes():
+    result = {}
+    for f in PROJECTS_DIR.glob("*.notes.md"):
+        slug = f.stem[:-6]  # entferne ".notes"
+        result[slug] = f.read_text(encoding="utf-8")
+    return JSONResponse(result)
+
+
+@app.post("/api/recent-projects/{slug}/notes")
+async def save_notes(slug: str, request: Request):
+    data = await request.json()
+    p = PROJECTS_DIR / f"{slug}.json"
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="Projekt nicht gefunden")
+    (PROJECTS_DIR / f"{slug}.notes.md").write_text(data.get("text", ""), encoding="utf-8")
+    return {"ok": True}
+
+
+@app.get("/api/recent-projects/{slug}/knxproj")
+def get_recent_knxproj(slug: str):
+    p = PROJECTS_DIR / f"{slug}.knxproj"
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="Original nicht gespeichert")
+    projects = _load_recent_projects()
+    meta = next((r for r in projects if r["slug"] == slug), {})
+    filename = meta.get("filename", f"{slug}.knxproj")
+    return FileResponse(str(p), media_type="application/octet-stream", filename=filename)
+
+
+@app.get("/api/recent-projects/{slug}/xml")
+def get_recent_xml(slug: str):
+    import zipfile
+    p = PROJECTS_DIR / f"{slug}.knxproj"
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="Original nicht gespeichert")
+    with zipfile.ZipFile(str(p)) as zf:
+        # Suche nach der Haupt-Projektdatei (0.xml oder ähnlich)
+        xml_names = [n for n in zf.namelist() if n.endswith('.xml') and '/' not in n]
+        if not xml_names:
+            xml_names = [n for n in zf.namelist() if n.endswith('.xml')]
+        if not xml_names:
+            raise HTTPException(status_code=404, detail="Keine XML im Archiv")
+        xml_content = zf.read(xml_names[0]).decode("utf-8", errors="replace")
+    projects = _load_recent_projects()
+    meta = next((r for r in projects if r["slug"] == slug), {})
+    filename = meta.get("filename", slug).replace(".knxproj", ".xml")
+    return Response(content=xml_content, media_type="application/xml",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @app.get("/api/recent-projects/{slug}/data")
@@ -1948,7 +2009,7 @@ async def parse_project(
         cfg = load_config()
         cfg["last_project_filename"] = file.filename or "project.knxproj"
         save_config(cfg)
-        _add_to_recent_projects(file.filename or "project.knxproj", project)
+        _add_to_recent_projects(file.filename or "project.knxproj", project, source_path=tmp_path)
 
         return JSONResponse(content=project)
     except InvalidPasswordException as exc:
